@@ -27,10 +27,9 @@ export const auth = betterAuth({
     advanced: {
         useSecureCookies: process.env.NODE_ENV === "production",
         cookiePrefix: "better-auth",
-        // CRÍTICO: Em produção com domínios diferentes, usar SameSite=None
-        generateId: () => crypto.randomUUID(),
     },
     // Configuração de cookies para funcionar entre domínios diferentes
+    // CRÍTICO: Todos os cookies precisam de SameSite=None em produção
     cookies: {
         sessionToken: {
             name: "better-auth.session_token",
@@ -40,6 +39,28 @@ export const auth = betterAuth({
                 secure: process.env.NODE_ENV === "production",
                 path: "/",
                 maxAge: 60 * 60 * 24 * 7, // 7 dias
+            },
+        },
+        // Cookie do OAuth state (usado no fluxo Google OAuth)
+        pkCodeVerifier: {
+            name: "better-auth.pkce_code_verifier",
+            options: {
+                httpOnly: true,
+                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                secure: process.env.NODE_ENV === "production",
+                path: "/",
+                maxAge: 60 * 10, // 10 minutos
+            },
+        },
+        // Cookie do state OAuth
+        state: {
+            name: "better-auth.state",
+            options: {
+                httpOnly: true,
+                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                secure: process.env.NODE_ENV === "production",
+                path: "/",
+                maxAge: 60 * 10, // 10 minutos
             },
         },
     },
