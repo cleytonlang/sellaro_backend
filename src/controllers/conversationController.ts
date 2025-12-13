@@ -21,7 +21,12 @@ export class ConversationController {
       // Get assistant and user info
       const assistant = await prisma.assistant.findUnique({
         where: { id: assistant_id },
-        select: { userId: true, openai_assistant_id: true, forms: { take: 1 } },
+        select: {
+          userId: true,
+          openai_assistant_id: true,
+          initial_message: true,
+          forms: { take: 1 }
+        },
       });
 
       if (!assistant) {
@@ -141,6 +146,7 @@ export class ConversationController {
         include: {
           assistant: true,
           lead: true,
+          messages: true,
         },
       });
 
@@ -153,7 +159,53 @@ export class ConversationController {
         },
       });
 
-      return reply.status(201).send(conversation);
+      // Send initial message from assistant if configured
+      if (assistant.initial_message && assistant.initial_message.trim()) {
+        try {
+          // Add the initial message to the OpenAI thread
+          await openaiService.addMessageToThread(
+            assistant.userId,
+            finalThreadId,
+            'assistant',
+            assistant.initial_message
+          );
+
+          // Save the initial message to the database
+          await prisma.message.create({
+            data: {
+              conversation_id: conversation.id,
+              role: 'assistant',
+              content: assistant.initial_message,
+            },
+          });
+
+          request.log.info({
+            conversationId: conversation.id,
+            message: 'Initial message sent successfully',
+          });
+        } catch (error) {
+          // Log error but don't fail the conversation creation
+          request.log.error({
+            error,
+            conversationId: conversation.id,
+            message: 'Failed to send initial message',
+          });
+        }
+      }
+
+      // Fetch conversation with updated messages
+      const conversationWithMessages = await prisma.conversation.findUnique({
+        where: { id: conversation.id },
+        include: {
+          assistant: true,
+          lead: true,
+          messages: {
+            orderBy: { created_at: 'asc' },
+          },
+        },
+      });
+
+      return reply.status(201).send(conversationWithMessages);
     } catch (error) {
       request.log.error(error);
       return reply.status(500).send({

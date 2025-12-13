@@ -65,10 +65,14 @@ export class LeadController {
       if (form?.assistant_id) {
         console.log(`📝 Creating conversation for lead ${lead.id} with assistant ${form.assistant_id}`);
 
-        // Get assistant to access user_id for OpenAI client
+        // Get assistant to access user_id for OpenAI client and initial message
         const assistant = await prisma.assistant.findUnique({
           where: { id: form.assistant_id },
-          select: { userId: true, openai_assistant_id: true },
+          select: {
+            userId: true,
+            openai_assistant_id: true,
+            initial_message: true,
+          },
         });
 
         // Create OpenAI thread
@@ -90,6 +94,9 @@ export class LeadController {
           },
           include: {
             assistant: true,
+            messages: {
+              orderBy: { created_at: 'asc' },
+            },
           },
         });
 
@@ -103,6 +110,59 @@ export class LeadController {
             data: {
               conversation_id: conversation.id,
               assistant_id: form.assistant_id,
+            },
+          },
+        });
+
+        // Send initial message from assistant if configured
+        if (assistant?.initial_message && assistant.initial_message.trim() && threadId) {
+          try {
+            console.log(`💬 Sending initial message to conversation ${conversation.id}`);
+
+            // Add the initial message to the OpenAI thread
+            const addedToThread = await openaiService.addMessageToThread(
+              assistant.userId,
+              threadId,
+              'assistant',
+              assistant.initial_message
+            );
+
+            if (addedToThread) {
+              console.log(`✅ Initial message added to OpenAI thread`);
+
+              // Save the initial message to the database
+              await prisma.message.create({
+                data: {
+                  conversation_id: conversation.id,
+                  role: 'assistant',
+                  content: assistant.initial_message,
+                },
+              });
+
+              console.log(`✅ Initial message saved to database`);
+            } else {
+              console.warn(`⚠️ Failed to add initial message to OpenAI thread`);
+            }
+          } catch (error) {
+            // Log error but don't fail the conversation creation
+            console.error(`❌ Error sending initial message:`, error);
+            request.log.error({
+              error,
+              conversationId: conversation.id,
+              message: 'Failed to send initial message',
+            });
+          }
+        } else {
+          console.log(`ℹ️ No initial message configured or thread not created`);
+        }
+
+        // Fetch conversation with updated messages
+        conversation = await prisma.conversation.findUnique({
+          where: { id: conversation.id },
+          include: {
+            assistant: true,
+            messages: {
+              orderBy: { created_at: 'asc' },
             },
           },
         });
