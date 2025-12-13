@@ -10,6 +10,18 @@ export default async function betterAuthRoutes(fastify: FastifyInstance) {
       const host = request.headers['x-forwarded-host'] || request.hostname;
       const url = new URL(request.url, `${protocol}://${host}`);
 
+      // Log detalhado para debug (apenas em desenvolvimento)
+      if (process.env.NODE_ENV !== 'production') {
+        fastify.log.info({
+          method: request.method,
+          url: url.toString(),
+          protocol,
+          host,
+          cookies: request.headers.cookie,
+          origin: request.headers.origin,
+        }, 'Better Auth Request');
+      }
+
       const headers = new Headers();
       Object.entries(request.headers).forEach(([key, value]) => {
         if (value) {
@@ -33,14 +45,22 @@ export default async function betterAuthRoutes(fastify: FastifyInstance) {
       // Call better-auth handler
       const response = await auth.handler(webRequest);
 
+      // Log cookies de resposta (apenas em desenvolvimento)
+      if (process.env.NODE_ENV !== 'production') {
+        const setCookies: string[] = [];
+        response.headers.forEach((value, key) => {
+          if (key.toLowerCase() === 'set-cookie') {
+            setCookies.push(value);
+          }
+        });
+        if (setCookies.length > 0) {
+          fastify.log.info({ setCookies }, 'Better Auth Response Cookies');
+        }
+      }
+
       // Set response headers preservando cookies
       response.headers.forEach((value, key) => {
-        // Set-Cookie precisa de tratamento especial no Fastify
-        if (key.toLowerCase() === 'set-cookie') {
-          reply.header(key, value);
-        } else {
-          reply.header(key, value);
-        }
+        reply.header(key, value);
       });
 
       // Get response body

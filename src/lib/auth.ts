@@ -26,9 +26,22 @@ export const auth = betterAuth({
     },
     advanced: {
         useSecureCookies: process.env.NODE_ENV === "production",
-        // Para produção com domínios diferentes, NÃO usar crossSubDomainCookies
-        // Isso causa problemas com Railway (.up.railway.app) e Vercel (.vercel.app)
         cookiePrefix: "better-auth",
+        // CRÍTICO: Em produção com domínios diferentes, usar SameSite=None
+        generateId: () => crypto.randomUUID(),
+    },
+    // Configuração de cookies para funcionar entre domínios diferentes
+    cookies: {
+        sessionToken: {
+            name: "better-auth.session_token",
+            options: {
+                httpOnly: true,
+                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+                secure: process.env.NODE_ENV === "production",
+                path: "/",
+                maxAge: 60 * 60 * 24 * 7, // 7 dias
+            },
+        },
     },
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3001",
     basePath: "/api/auth",
