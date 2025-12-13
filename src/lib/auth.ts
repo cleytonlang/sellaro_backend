@@ -27,41 +27,13 @@ export const auth = betterAuth({
     advanced: {
         useSecureCookies: process.env.NODE_ENV === "production",
         cookiePrefix: "better-auth",
-    },
-    // Configuração de cookies para funcionar entre domínios diferentes
-    // CRÍTICO: Todos os cookies precisam de SameSite=None em produção
-    cookies: {
-        sessionToken: {
-            name: "better-auth.session_token",
-            options: {
-                httpOnly: true,
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                secure: process.env.NODE_ENV === "production",
-                path: "/",
-                maxAge: 60 * 60 * 24 * 7, // 7 dias
-            },
-        },
-        // Cookie do OAuth state (usado no fluxo Google OAuth)
-        pkCodeVerifier: {
-            name: "better-auth.pkce_code_verifier",
-            options: {
-                httpOnly: true,
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                secure: process.env.NODE_ENV === "production",
-                path: "/",
-                maxAge: 60 * 10, // 10 minutos
-            },
-        },
-        // Cookie do state OAuth
-        state: {
-            name: "better-auth.state",
-            options: {
-                httpOnly: true,
-                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-                secure: process.env.NODE_ENV === "production",
-                path: "/",
-                maxAge: 60 * 10, // 10 minutos
-            },
+        // CRÍTICO: defaultCookieAttributes aplica para TODOS os cookies
+        // Isso é necessário para evitar state_mismatch em OAuth cross-domain
+        defaultCookieAttributes: {
+            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+            secure: process.env.NODE_ENV === "production",
+            httpOnly: true,
+            path: "/",
         },
     },
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3001",
