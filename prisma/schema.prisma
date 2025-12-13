@@ -1,0 +1,232 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  emailVerified   Boolean   @default(false)
+  image           String?
+  openai_api_key  String?   // encrypted
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  // Better-auth relations
+  sessions        Session[]
+  accounts        Account[]
+
+  // App relations
+  forms           Form[]
+  assistants      Assistant[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@map("verification")
+}
+
+model Assistant {
+  id                  String   @id @default(cuid())
+  userId              String
+  name                String
+  system_prompt       String   @db.Text
+  initial_message     String   @db.Text
+  temperature         Float    @default(0.7)
+  model               String   @default("gpt-4-turbo-preview")
+  openai_assistant_id String?  // ID from OpenAI API
+
+  // Trigger settings
+  enable_scheduling   Boolean  @default(true)
+  enable_email        Boolean  @default(true)
+  enable_link_sharing Boolean  @default(true)
+
+  created_at          DateTime @default(now())
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  forms               Form[]
+  conversations       Conversation[]
+
+  @@index([userId])
+  @@map("assistant")
+}
+
+model Form {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?  @db.Text
+
+  // Field configuration
+  fields      Json     // Array of form fields
+
+  // Visual settings
+  settings    Json?    // Theme, buttons, etc settings
+
+  // Embed
+  embed_code  String   @unique @default(cuid())
+  is_active   Boolean  @default(true)
+
+  // Associated assistant
+  assistant_id String?
+
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assistant   Assistant? @relation(fields: [assistant_id], references: [id])
+  leads       Lead[]
+  kanban_columns KanbanColumn[]
+
+  @@index([userId])
+  @@index([assistant_id])
+  @@index([embed_code])
+  @@map("form")
+}
+
+model Lead {
+  id                String   @id @default(cuid())
+  form_id           String
+  kanban_column_id  String
+
+  // Form submitted data
+  form_data         Json
+
+  // Metadata
+  ip_address        String?
+  user_agent        String?
+  referrer_url      String?
+
+  // Soft delete
+  deleted_at        DateTime?
+
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  form              Form     @relation(fields: [form_id], references: [id])
+  kanban_column     KanbanColumn @relation(fields: [kanban_column_id], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+  events            LeadEvent[]
+
+  @@index([form_id])
+  @@index([kanban_column_id])
+  @@index([created_at])
+  @@index([deleted_at])
+  @@map("lead")
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  lead_id       String
+  assistant_id  String
+  thread_id     String?  // OpenAI Thread ID
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+
+  lead          Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  assistant     Assistant @relation(fields: [assistant_id], references: [id])
+  messages      Message[]
+
+  @@index([lead_id])
+  @@index([assistant_id])
+  @@map("conversation")
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  conversation_id String
+  role            String   // user, assistant, system
+  content         String   @db.Text
+  function_call   Json?    // If AI executed any function
+  created_at      DateTime @default(now())
+
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@index([conversation_id])
+  @@index([created_at])
+  @@map("message")
+}
+
+model LeadEvent {
+  id          String   @id @default(cuid())
+  lead_id     String
+  type        String   // FORM_SUBMITTED, CHAT_STARTED, MEETING_SCHEDULED, EMAIL_SENT, LINK_SHARED
+  data        Json
+  created_at  DateTime @default(now())
+
+  lead        Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([type])
+  @@index([created_at])
+  @@map("lead_event")
+}
+
+model KanbanColumn {
+  id          String   @id @default(cuid())
+  form_id     String
+  name        String
+  order       Int
+  color       String?
+  created_at  DateTime @default(now())
+
+  form        Form     @relation(fields: [form_id], references: [id], onDelete: Cascade)
+  leads       Lead[]
+
+  @@index([form_id])
+  @@index([order])
+  @@map("kanban_column")
+}
