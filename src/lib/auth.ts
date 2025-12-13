@@ -16,6 +16,8 @@ export const auth = betterAuth({
             clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
             // O callback deve apontar para o BACKEND onde o Better Auth está rodando
             redirectURI: `${process.env.BETTER_AUTH_URL || "http://localhost:3001"}/api/auth/callback/google`,
+            // Redirecionar para o frontend após login bem-sucedido
+            callbackURL: `${process.env.FRONTEND_URL || "http://localhost:3000"}/panel`,
         },
     },
     session: {
