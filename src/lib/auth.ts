@@ -18,12 +18,17 @@ export const auth = betterAuth({
             redirectURI: `${process.env.BETTER_AUTH_URL || "http://localhost:3001"}/api/auth/callback/google`,
         },
     },
+    session: {
+        cookieCache: {
+            enabled: true,
+            maxAge: 60 * 5, // 5 minutes
+        },
+    },
     advanced: {
         useSecureCookies: process.env.NODE_ENV === "production",
-        // Configurações importantes para produção com domínios diferentes
-        crossSubDomainCookies: {
-            enabled: true,
-        },
+        // Para produção com domínios diferentes, NÃO usar crossSubDomainCookies
+        // Isso causa problemas com Railway (.up.railway.app) e Vercel (.vercel.app)
+        cookiePrefix: "better-auth",
     },
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3001",
     basePath: "/api/auth",

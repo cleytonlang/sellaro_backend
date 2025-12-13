@@ -5,11 +5,10 @@ export default async function betterAuthRoutes(fastify: FastifyInstance) {
   // Handle all auth routes (GET and POST)
   fastify.all('/auth/*', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      // Convert Fastify request to Web Request
-      const url = new URL(
-        request.url,
-        `${request.protocol}://${request.hostname}`
-      );
+      // Construir a URL completa com o protocolo e host corretos
+      const protocol = request.headers['x-forwarded-proto'] || request.protocol;
+      const host = request.headers['x-forwarded-host'] || request.hostname;
+      const url = new URL(request.url, `${protocol}://${host}`);
 
       const headers = new Headers();
       Object.entries(request.headers).forEach(([key, value]) => {
@@ -34,9 +33,14 @@ export default async function betterAuthRoutes(fastify: FastifyInstance) {
       // Call better-auth handler
       const response = await auth.handler(webRequest);
 
-      // Set response headers
+      // Set response headers preservando cookies
       response.headers.forEach((value, key) => {
-        reply.header(key, value);
+        // Set-Cookie precisa de tratamento especial no Fastify
+        if (key.toLowerCase() === 'set-cookie') {
+          reply.header(key, value);
+        } else {
+          reply.header(key, value);
+        }
       });
 
       // Get response body
