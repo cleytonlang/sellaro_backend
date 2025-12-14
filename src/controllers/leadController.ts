@@ -188,12 +188,12 @@ export class LeadController {
 
   async getAll(
     request: FastifyRequest<{
-      Querystring: { form_id: string; kanban_column_id?: string; page?: string };
+      Querystring: { form_id: string; kanban_column_id?: string; search?: string; page?: string };
     }>,
     reply: FastifyReply
   ) {
     try {
-      const { form_id, kanban_column_id, page = '1' } = request.query;
+      const { form_id, kanban_column_id, search, page = '1' } = request.query;
 
       // form_id is required
       if (!form_id) {
@@ -207,31 +207,94 @@ export class LeadController {
       const pageSize = 10;
       const skip = (pageNumber - 1) * pageSize;
 
-      const where: any = {
+      let where: any = {
         deleted_at: null, // Only get non-deleted leads
         form_id,
       };
       if (kanban_column_id) where.kanban_column_id = kanban_column_id;
 
-      // Get total count for pagination
-      const total = await prisma.lead.count({ where });
+      // If search is provided, use raw SQL for JSONB text search
+      let leads;
+      let total;
 
-      const leads = await prisma.lead.findMany({
-        where,
-        include: {
-          form: true,
-          kanban_column: true,
-          _count: {
-            select: {
-              conversations: true,
-              events: true,
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+
+        // Build the SQL conditions
+        const conditions = ['deleted_at IS NULL', 'form_id = $1'];
+        const params: any[] = [form_id];
+        let paramIndex = 2;
+
+        if (kanban_column_id) {
+          conditions.push(`kanban_column_id = $${paramIndex}`);
+          params.push(kanban_column_id);
+          paramIndex++;
+        }
+
+        // Add JSONB search condition - convert JSONB to text and search
+        conditions.push(`form_data::text ILIKE $${paramIndex}`);
+        params.push(`%${searchTerm}%`);
+        paramIndex++;
+
+        const whereClause = conditions.join(' AND ');
+
+        // Get total count
+        const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+          `SELECT COUNT(*)::int as count FROM "lead" WHERE ${whereClause}`,
+          ...params
+        );
+        total = Number(countResult[0].count);
+
+        // Get leads with pagination
+        const leadsResult = await prisma.$queryRawUnsafe<any[]>(
+          `SELECT id FROM "lead" WHERE ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+          ...params,
+          pageSize,
+          skip
+        );
+
+        // Fetch full lead data with relations
+        const leadIds = leadsResult.map(l => l.id);
+
+        if (leadIds.length > 0) {
+          leads = await prisma.lead.findMany({
+            where: { id: { in: leadIds } },
+            include: {
+              form: true,
+              kanban_column: true,
+              _count: {
+                select: {
+                  conversations: true,
+                  events: true,
+                },
+              },
+            },
+            orderBy: { created_at: 'desc' },
+          });
+        } else {
+          leads = [];
+        }
+      } else {
+        // No search, use regular Prisma query
+        total = await prisma.lead.count({ where });
+
+        leads = await prisma.lead.findMany({
+          where,
+          include: {
+            form: true,
+            kanban_column: true,
+            _count: {
+              select: {
+                conversations: true,
+                events: true,
+              },
             },
           },
-        },
-        orderBy: { created_at: 'desc' },
-        skip,
-        take: pageSize,
-      });
+          orderBy: { created_at: 'desc' },
+          skip,
+          take: pageSize,
+        });
+      }
 
       const totalPages = Math.ceil(total / pageSize);
 
