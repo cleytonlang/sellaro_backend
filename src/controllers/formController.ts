@@ -64,7 +64,13 @@ export class FormController {
         include: {
           assistant: true,
           _count: {
-            select: { leads: true },
+            select: {
+              leads: {
+                where: {
+                  deleted_at: null
+                }
+              }
+            },
           },
         },
         orderBy: { created_at: 'desc' },

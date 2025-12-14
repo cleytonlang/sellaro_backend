@@ -30,6 +30,7 @@ model User {
   // App relations
   forms           Form[]
   assistants      Assistant[]
+  lead_comments   LeadComment[]
 
   @@map("user")
 }
@@ -160,6 +161,7 @@ model Lead {
   kanban_column     KanbanColumn @relation(fields: [kanban_column_id], references: [id], onDelete: Cascade)
   conversations     Conversation[]
   events            LeadEvent[]
+  comments          LeadComment[]
 
   @@index([form_id])
   @@index([kanban_column_id])
@@ -229,4 +231,21 @@ model KanbanColumn {
   @@index([form_id])
   @@index([order])
   @@map("kanban_column")
+}
+
+model LeadComment {
+  id          String   @id @default(cuid())
+  lead_id     String
+  user_id     String
+  content     String   @db.Text
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  lead        Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([user_id])
+  @@index([created_at])
+  @@map("lead_comment")
 }

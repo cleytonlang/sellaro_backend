@@ -341,6 +341,19 @@ export class LeadController {
           events: {
             orderBy: { created_at: 'desc' },
           },
+          comments: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
+              },
+            },
+            orderBy: { created_at: 'desc' },
+          },
         },
       });
 

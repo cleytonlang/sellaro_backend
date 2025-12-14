@@ -12,11 +12,13 @@ import betterAuthRoutes from './routes/better-auth';
 import userRoutes from './routes/user';
 import formRoutes from './routes/form';
 import leadRoutes from './routes/lead';
+import leadCommentRoutes from './routes/leadComment';
 import assistantRoutes from './routes/assistant';
 import conversationRoutes from './routes/conversation';
 import kanbanRoutes from './routes/kanban';
 import uploadRoutes from './routes/upload';
 import { settingsRoutes } from './routes/settings';
+import { analyticsRoutes } from './routes/analytics';
 
 const server = Fastify({
   logger: {
@@ -62,11 +64,13 @@ server.register(betterAuthRoutes, { prefix: '/api' });
 server.register(userRoutes, { prefix: '/api/users' });
 server.register(formRoutes, { prefix: '/api/forms' });
 server.register(leadRoutes, { prefix: '/api/leads' });
+server.register(leadCommentRoutes, { prefix: '/api/lead-comments' });
 server.register(assistantRoutes, { prefix: '/api/assistants' });
 server.register(conversationRoutes, { prefix: '/api/conversations' });
 server.register(kanbanRoutes, { prefix: '/api/kanban-columns' });
 server.register(uploadRoutes, { prefix: '/api/upload' });
 server.register(settingsRoutes);
+server.register(analyticsRoutes, { prefix: '/api' });
 
 // Error handler
 server.setErrorHandler((error, _request, reply) => {
