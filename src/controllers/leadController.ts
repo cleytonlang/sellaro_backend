@@ -214,8 +214,8 @@ export class LeadController {
       if (kanban_column_id) where.kanban_column_id = kanban_column_id;
 
       // If search is provided, use raw SQL for JSONB text search
-      let leads;
-      let total;
+      let leads: any[] = [];
+      let total: number = 0;
 
       if (search && search.trim()) {
         const searchTerm = search.trim();
