@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { AnalyticsController } from '../controllers/analyticsController';
 
 const analyticsController = new AnalyticsController();
