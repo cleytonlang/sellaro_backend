@@ -41,8 +41,6 @@ export const auth = betterAuth({
     basePath: "/api/auth",
     trustedOrigins: [
         process.env.FRONTEND_URL || "http://localhost:3000",
-        process.env.BETTER_AUTH_URL || "http://localhost:3001",
-        "https://sellaro.vercel.app", // URL de produção do frontend
-        "https://sellarobackend-production.up.railway.app", // URL de produção do backend
+        process.env.BETTER_AUTH_URL || "http://localhost:3001"
     ],
 });

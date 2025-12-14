@@ -121,6 +121,37 @@ export class OpenAIService {
       return false;
     }
   }
+
+  async getAvailableModels(userId: string): Promise<any[] | null> {
+    try {
+      const openai = await this.getOpenAIClient(userId);
+      if (!openai) {
+        throw new Error('OpenAI client not available');
+      }
+
+      const modelsResponse = await openai.models.list();
+
+      // Filter only GPT models suitable for assistants
+      const gptModels = modelsResponse.data.filter((model) =>
+        model.id.includes('gpt') &&
+        !model.id.includes('instruct') &&
+        !model.id.includes('vision')
+      ).map((model) => ({
+        id: model.id,
+        name: model.id,
+        created: model.created,
+        owned_by: model.owned_by
+      }));
+
+      // Sort by creation date (newest first)
+      gptModels.sort((a, b) => b.created - a.created);
+
+      return gptModels;
+    } catch (error) {
+      console.error('Error fetching models:', error);
+      return null;
+    }
+  }
 }
 
 export const openaiService = new OpenAIService();

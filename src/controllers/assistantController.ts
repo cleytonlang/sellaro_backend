@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import OpenAI from 'openai';
 import prisma from '../utils/prisma';
 import { decryptToken } from '../utils/crypto';
+import { openaiService } from '../services/openaiService';
 
 export class AssistantController {
   async create(
@@ -75,6 +76,7 @@ export class AssistantController {
           name,
           instructions: system_prompt,
           model,
+          temperature,
         });
         openaiAssistantId = openaiAssistant.id;
       } catch (err) {
@@ -218,8 +220,8 @@ export class AssistantController {
         });
       }
 
-      // If updating name or system_prompt, sync with OpenAI
-      if ((updateData.name || updateData.system_prompt) && existingAssistant.openai_assistant_id) {
+      // If updating name, system_prompt, model or temperature, sync with OpenAI
+      if ((updateData.name || updateData.system_prompt || updateData.model || updateData.temperature !== undefined) && existingAssistant.openai_assistant_id) {
         if (!existingAssistant.user?.openai_api_key) {
           return reply.status(400).send({
             success: false,
@@ -246,6 +248,7 @@ export class AssistantController {
             name: updateData.name || existingAssistant.name,
             instructions: updateData.system_prompt || existingAssistant.system_prompt,
             model: updateData.model || existingAssistant.model,
+            temperature: updateData.temperature !== undefined ? updateData.temperature : existingAssistant.temperature,
           });
         } catch (err) {
           request.log.error(err);
@@ -330,6 +333,42 @@ export class AssistantController {
       return reply.status(500).send({
         success: false,
         error: 'Failed to delete assistant',
+      });
+    }
+  }
+
+  async getModels(
+    request: FastifyRequest<{ Querystring: { userId: string } }>,
+    reply: FastifyReply
+  ) {
+    try {
+      const { userId } = request.query;
+
+      if (!userId) {
+        return reply.status(400).send({
+          success: false,
+          error: 'userId is required',
+        });
+      }
+
+      const models = await openaiService.getAvailableModels(userId);
+
+      if (!models) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Failed to fetch models. Please check your OpenAI API key configuration.',
+        });
+      }
+
+      return reply.send({
+        success: true,
+        data: models,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch available models',
       });
     }
   }
