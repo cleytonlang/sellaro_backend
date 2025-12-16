@@ -122,8 +122,11 @@ export class LeadController {
             const formDataText = Object.entries(form_data)
               .map(([key, value]) => {
                 // Find the field label from form fields
-                const field = form.fields.find((f: any) => f.id === key);
-                const label = field?.label || key;
+                let label = key;
+                if (form.fields && Array.isArray(form.fields)) {
+                  const field = form.fields.find((f: any) => f.id === key);
+                  label = field?.label || key;
+                }
 
                 // Format value (handle arrays for checkboxes)
                 const formattedValue = Array.isArray(value) ? value.join(', ') : value;
