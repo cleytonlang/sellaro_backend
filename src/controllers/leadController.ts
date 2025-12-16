@@ -2,6 +2,15 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 import { openaiService } from '../services/openaiService';
 
+interface FormField {
+  id: string;
+  label: string;
+  type: string;
+  placeholder: string;
+  required: boolean;
+  options?: string[];
+}
+
 export class LeadController {
   async create(
     request: FastifyRequest<{
@@ -124,7 +133,8 @@ export class LeadController {
                 // Find the field label from form fields
                 let label = key;
                 if (form.fields && Array.isArray(form.fields)) {
-                  const field = form.fields.find((f: any) => f.id === key);
+                  const fields = form.fields as FormField[];
+                  const field = fields.find((f) => f.id === key);
                   label = field?.label || key;
                 }
 
