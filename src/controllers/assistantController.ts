@@ -14,6 +14,8 @@ export class AssistantController {
         initial_message: string;
         temperature?: number;
         model?: string;
+        max_completion_tokens?: number;
+        max_prompt_tokens?: number;
         enable_scheduling?: boolean;
         enable_email?: boolean;
         enable_link_sharing?: boolean;
@@ -29,6 +31,8 @@ export class AssistantController {
         initial_message,
         temperature = 0.7,
         model = 'gpt-4-turbo-preview',
+        max_completion_tokens = 500,
+        max_prompt_tokens,
         enable_scheduling,
         enable_email,
         enable_link_sharing,
@@ -96,6 +100,8 @@ export class AssistantController {
           initial_message,
           temperature,
           model,
+          max_completion_tokens,
+          max_prompt_tokens,
           openai_assistant_id: openaiAssistantId,
           enable_scheduling,
           enable_email,
@@ -196,6 +202,8 @@ export class AssistantController {
         initial_message?: string;
         temperature?: number;
         model?: string;
+        max_completion_tokens?: number;
+        max_prompt_tokens?: number;
         enable_scheduling?: boolean;
         enable_email?: boolean;
         enable_link_sharing?: boolean;

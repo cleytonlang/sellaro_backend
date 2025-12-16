@@ -10,6 +10,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     conversationId,
     userId,
     threadId,
+    assistantId,
     openaiAssistantId,
     content,
     userMessageId,
@@ -33,12 +34,23 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     // Update job progress
     await job.progress(10);
 
+    // Get assistant configuration for token limits
+    const assistant = await prisma.assistant.findUnique({
+      where: { id: assistantId },
+      select: {
+        max_completion_tokens: true,
+        max_prompt_tokens: true,
+      },
+    });
+
     // Send message to OpenAI and get response
     const assistantResponse = await openaiService.sendMessageAndGetResponse(
       userId,
       threadId,
       openaiAssistantId,
-      content
+      content,
+      assistant?.max_completion_tokens ?? undefined,
+      assistant?.max_prompt_tokens ?? undefined
     );
 
     await job.progress(70);

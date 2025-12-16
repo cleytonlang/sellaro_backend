@@ -102,7 +102,9 @@ export class OpenAIService {
     userId: string,
     threadId: string,
     assistantId: string,
-    userMessage: string
+    userMessage: string,
+    maxCompletionTokens?: number,
+    maxPromptTokens?: number
   ): Promise<string | null> {
     const lockId = uuidv4();
 
@@ -140,9 +142,20 @@ export class OpenAIService {
         });
 
         // Run the assistant
-        const run = await openai.beta.threads.runs.create(threadId, {
+        const runParams: any = {
           assistant_id: assistantId,
-        });
+        };
+
+        // Add token limits if specified
+        if (maxCompletionTokens !== undefined) {
+          runParams.max_completion_tokens = maxCompletionTokens;
+        }
+
+        if (maxPromptTokens !== undefined) {
+          runParams.max_prompt_tokens = maxPromptTokens;
+        }
+
+        const run = await openai.beta.threads.runs.create(threadId, runParams);
 
         console.log(`🚀 Started run ${run.id} on thread ${threadId}`);
 
@@ -169,7 +182,13 @@ export class OpenAIService {
           return null;
         }
 
-        console.log(`✅ Run ${run.id} completed successfully`);
+        // Log token usage
+        if (runStatus.usage) {
+          console.log(`✅ Run ${run.id} completed successfully`);
+          console.log(`📊 Token usage - Prompt: ${runStatus.usage.prompt_tokens}, Completion: ${runStatus.usage.completion_tokens}, Total: ${runStatus.usage.total_tokens}`);
+        } else {
+          console.log(`✅ Run ${run.id} completed successfully`);
+        }
 
         // Get the assistant's messages
         const messages = await openai.beta.threads.messages.list(threadId, {

@@ -81,25 +81,29 @@ model Verification {
 }
 
 model Assistant {
-  id                  String   @id @default(cuid())
-  userId              String
-  name                String
-  system_prompt       String   @db.Text
-  initial_message     String   @db.Text
-  temperature         Float    @default(0.7)
-  model               String   @default("gpt-4-turbo-preview")
-  openai_assistant_id String?  // ID from OpenAI API
+  id                    String   @id @default(cuid())
+  userId                String
+  name                  String
+  system_prompt         String   @db.Text
+  initial_message       String   @db.Text
+  temperature           Float    @default(0.7)
+  model                 String   @default("gpt-4-turbo-preview")
+  openai_assistant_id   String?  // ID from OpenAI API
+
+  // Token limits for cost control
+  max_completion_tokens Int?     @default(500)  // Max tokens in assistant response (default: small messages)
+  max_prompt_tokens     Int?     // Max tokens in prompt/input (null = unlimited)
 
   // Trigger settings
-  enable_scheduling   Boolean  @default(true)
-  enable_email        Boolean  @default(true)
-  enable_link_sharing Boolean  @default(true)
+  enable_scheduling     Boolean  @default(true)
+  enable_email          Boolean  @default(true)
+  enable_link_sharing   Boolean  @default(true)
 
-  created_at          DateTime @default(now())
+  created_at            DateTime @default(now())
 
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  forms               Form[]
-  conversations       Conversation[]
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  forms                 Form[]
+  conversations         Conversation[]
 
   @@index([userId])
   @@map("assistant")
