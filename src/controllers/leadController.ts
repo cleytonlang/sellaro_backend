@@ -133,7 +133,8 @@ export class LeadController {
                 // Find the field label from form fields
                 let label = key;
                 if (form.fields && Array.isArray(form.fields)) {
-                  const fields = form.fields as FormField[];
+                  const fieldsUnknown = form.fields as unknown;
+                  const fields = fieldsUnknown as FormField[];
                   const field = fields.find((f) => f.id === key);
                   label = field?.label || key;
                 }
