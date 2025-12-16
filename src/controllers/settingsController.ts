@@ -272,12 +272,11 @@ export class SettingsController {
         })
 
         let hasCredits = true
-        let billingInfo = null
 
         if (billingResponse.ok) {
-          billingInfo = await billingResponse.json()
+          const billingInfo = await billingResponse.json() as { has_payment_method?: boolean; soft_limit_usd?: number }
           // Check if account has access
-          hasCredits = billingInfo.has_payment_method || billingInfo.soft_limit_usd > 0
+          hasCredits = billingInfo.has_payment_method || (billingInfo.soft_limit_usd ?? 0) > 0
         }
 
         return reply.send({
