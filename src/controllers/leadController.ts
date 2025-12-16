@@ -65,13 +65,14 @@ export class LeadController {
       if (form?.assistant_id) {
         console.log(`📝 Creating conversation for lead ${lead.id} with assistant ${form.assistant_id}`);
 
-        // Get assistant to access user_id for OpenAI client and initial message
+        // Get assistant to access user_id for OpenAI client, initial message and name
         const assistant = await prisma.assistant.findUnique({
           where: { id: form.assistant_id },
           select: {
             userId: true,
             openai_assistant_id: true,
             initial_message: true,
+            name: true,
           },
         });
 
@@ -114,46 +115,87 @@ export class LeadController {
           },
         });
 
-        // Send initial message from assistant if configured
-        if (assistant?.initial_message && assistant.initial_message.trim() && threadId) {
+        // Send context information and initial message to the thread
+        if (threadId && assistant) {
           try {
-            console.log(`💬 Sending initial message to conversation ${conversation.id}`);
+            // Format form data for better readability
+            const formDataText = Object.entries(form_data)
+              .map(([key, value]) => {
+                // Find the field label from form fields
+                const field = form.fields.find((f: any) => f.id === key);
+                const label = field?.label || key;
 
-            // Add the initial message to the OpenAI thread
-            const addedToThread = await openaiService.addMessageToThread(
+                // Format value (handle arrays for checkboxes)
+                const formattedValue = Array.isArray(value) ? value.join(', ') : value;
+
+                return `${label}: ${formattedValue}`;
+              })
+              .join('\n');
+
+            // Prepare context message with assistant name and form data
+            const contextMessage = `[CONTEXTO DO SISTEMA - Esta mensagem é apenas para contexto e não deve ser exibida ao usuário]
+
+Nome da Assistente: ${assistant.name}
+
+Dados do formulário preenchido pelo usuário:
+${formDataText}
+
+Instruções:
+- Você é ${assistant.name}
+- Use as informações do formulário acima para personalizar suas respostas
+- O usuário já forneceu essas informações, não peça novamente
+- Seja prestativa e utilize o contexto fornecido`;
+
+            // Add context message to the thread (this won't be saved to DB, just sent to OpenAI)
+            await openaiService.addMessageToThread(
               assistant.userId,
               threadId,
-              'assistant',
-              assistant.initial_message
+              'user',
+              contextMessage
             );
 
-            if (addedToThread) {
-              console.log(`✅ Initial message added to OpenAI thread`);
+            console.log(`✅ Context (assistant name + form data) added to OpenAI thread`);
 
-              // Save the initial message to the database
-              await prisma.message.create({
-                data: {
-                  conversation_id: conversation.id,
-                  role: 'assistant',
-                  content: assistant.initial_message,
-                },
-              });
+            // Send initial message from assistant if configured
+            if (assistant.initial_message && assistant.initial_message.trim()) {
+              console.log(`💬 Sending initial message to conversation ${conversation.id}`);
 
-              console.log(`✅ Initial message saved to database`);
-            } else {
-              console.warn(`⚠️ Failed to add initial message to OpenAI thread`);
+              // Add the initial message to the OpenAI thread
+              const addedToThread = await openaiService.addMessageToThread(
+                assistant.userId,
+                threadId,
+                'assistant',
+                assistant.initial_message
+              );
+
+              if (addedToThread) {
+                console.log(`✅ Initial message added to OpenAI thread`);
+
+                // Save the initial message to the database (only the initial message, not the context)
+                await prisma.message.create({
+                  data: {
+                    conversation_id: conversation.id,
+                    role: 'assistant',
+                    content: assistant.initial_message,
+                  },
+                });
+
+                console.log(`✅ Initial message saved to database`);
+              } else {
+                console.warn(`⚠️ Failed to add initial message to OpenAI thread`);
+              }
             }
           } catch (error) {
             // Log error but don't fail the conversation creation
-            console.error(`❌ Error sending initial message:`, error);
+            console.error(`❌ Error sending context or initial message:`, error);
             request.log.error({
               error,
               conversationId: conversation.id,
-              message: 'Failed to send initial message',
+              message: 'Failed to send context or initial message',
             });
           }
         } else {
-          console.log(`ℹ️ No initial message configured or thread not created`);
+          console.log(`ℹ️ No thread created or assistant not found`);
         }
 
         // Fetch conversation with updated messages
@@ -333,6 +375,7 @@ export class LeadController {
           kanban_column: true,
           conversations: {
             include: {
+              assistant: true,
               messages: {
                 orderBy: { created_at: 'asc' },
               },

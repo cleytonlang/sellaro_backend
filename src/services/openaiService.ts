@@ -152,6 +152,48 @@ export class OpenAIService {
       return null;
     }
   }
+
+  async getThreadMessages(userId: string, threadId: string): Promise<any[] | null> {
+    try {
+      const openai = await this.getOpenAIClient(userId);
+      if (!openai) {
+        throw new Error('OpenAI client not available');
+      }
+
+      // Get all messages from the thread
+      const messages = await openai.beta.threads.messages.list(threadId, {
+        order: 'asc', // oldest first
+        limit: 100,
+      });
+
+      // Format messages for easier consumption
+      const formattedMessages = messages.data.map((message) => {
+        // Extract text content
+        const textContent = message.content
+          .filter((content) => content.type === 'text')
+          .map((content) => {
+            if (content.type === 'text') {
+              return content.text.value;
+            }
+            return '';
+          })
+          .join('\n');
+
+        return {
+          id: message.id,
+          role: message.role,
+          content: textContent,
+          created_at: message.created_at,
+          metadata: message.metadata,
+        };
+      });
+
+      return formattedMessages;
+    } catch (error) {
+      console.error('Error fetching thread messages:', error);
+      return null;
+    }
+  }
 }
 
 export const openaiService = new OpenAIService();

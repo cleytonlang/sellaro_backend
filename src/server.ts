@@ -17,6 +17,7 @@ import assistantRoutes from './routes/assistant';
 import conversationRoutes from './routes/conversation';
 import kanbanRoutes from './routes/kanban';
 import uploadRoutes from './routes/upload';
+import threadRoutes from './routes/thread';
 import { settingsRoutes } from './routes/settings';
 import { analyticsRoutes } from './routes/analytics';
 
@@ -69,6 +70,7 @@ server.register(assistantRoutes, { prefix: '/api/assistants' });
 server.register(conversationRoutes, { prefix: '/api/conversations' });
 server.register(kanbanRoutes, { prefix: '/api/kanban-columns' });
 server.register(uploadRoutes, { prefix: '/api/upload' });
+server.register(threadRoutes, { prefix: '/api/threads' });
 server.register(settingsRoutes);
 server.register(analyticsRoutes, { prefix: '/api' });
 
