@@ -1,6 +1,7 @@
 import { Job } from 'bull';
 import { messageQueue, MessageJobData, MessageJobResult } from '../queues/messageQueue';
 import { openaiService } from '../services/openaiService';
+import { threadLockService } from '../services/threadLockService';
 import prisma from '../utils/prisma';
 
 // Process message job
@@ -17,6 +18,17 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
 
   try {
     console.log(`Processing message for conversation ${conversationId}`);
+
+    // Check if thread is currently locked by another job
+    const isLocked = await threadLockService.isLocked(threadId);
+    if (isLocked) {
+      const activeRunId = await threadLockService.getActiveRun(threadId);
+      console.log(`⏸️ Thread ${threadId} is locked (active run: ${activeRunId}), job will retry...`);
+
+      // Throw error to trigger retry with backoff
+      // This allows the worker to process other jobs instead of blocking
+      throw new Error(`Thread ${threadId} is currently processing another message`);
+    }
 
     // Update job progress
     await job.progress(10);
@@ -72,6 +84,16 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
   } catch (error) {
     console.error(`❌ Error processing message for conversation ${conversationId}:`, error);
     console.log(`🔄 Attempt ${job.attemptsMade} of ${job.opts.attempts}`);
+
+    // Check if error is related to active run on thread
+    if (error instanceof Error && error.message.includes('while a run')) {
+      console.log(`⚠️ Thread busy error detected - will retry with backoff`);
+    }
+
+    // Check if error is related to lock acquisition failure
+    if (error instanceof Error && error.message.includes('Failed to acquire lock')) {
+      console.log(`⚠️ Lock acquisition failed - will retry with backoff`);
+    }
 
     // Save error to database as a system message (optional)
     // await prisma.message.create({

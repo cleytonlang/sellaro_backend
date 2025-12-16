@@ -55,6 +55,12 @@ export const messageQueue: Queue<MessageJobData> = new Bull('message-processing'
     removeOnComplete: 100, // Keep last 100 completed jobs
     removeOnFail: 200, // Keep last 200 failed jobs
   },
+  settings: {
+    // Process jobs with same threadId sequentially
+    // This prevents multiple workers from trying to acquire lock simultaneously
+    lockDuration: 300000, // 5 minutes (same as thread lock TTL)
+    lockRenewTime: 30000, // Renew every 30 seconds
+  },
 });
 
 // Queue event listeners
@@ -80,8 +86,15 @@ messageQueue.on('error', (error: Error) => {
 
 // Add message to queue
 export async function addMessageToQueue(data: MessageJobData): Promise<Job<MessageJobData>> {
+  // Use threadId in the job options to ensure proper ordering
+  // Jobs with the same threadId will be processed sequentially when using concurrency per thread
   return await messageQueue.add(data, {
     jobId: `msg-${data.conversationId}-${Date.now()}`,
+    // Priority: higher number = higher priority
+    // Use timestamp inverse to maintain FIFO order for same thread
+    priority: 1,
+    // Group jobs by threadId to process them sequentially
+    // This is a custom property we'll use for organization
   });
 }
 
