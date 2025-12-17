@@ -4,7 +4,6 @@ export class ThreadLockService {
   private redis: Redis;
   private readonly LOCK_TTL = 300; // 5 minutes in seconds
   private readonly LOCK_RETRY_DELAY = 1000; // 1 second
-  private readonly MAX_LOCK_WAIT = 300000; // 5 minutes in milliseconds
 
   constructor() {
     const upstashUrl = process.env.UPSTASH_REDIS_URL;
@@ -85,10 +84,44 @@ export class ThreadLockService {
    * Waits for and acquires a lock for a thread
    * Retries until lock is acquired or timeout is reached
    */
-  async waitForLock(threadId: string, lockId: string): Promise<boolean> {
-    const startTime = Date.now();
+  async waitForLock(threadId: string, lockId: string, maxRetries: number = 300): Promise<boolean> {
+    let attempts = 0;
 
-    while (Date.now() - startTime < this.MAX_LOCK_WAIT) {
+    while (attempts < maxRetries) {
+      const acquired = await this.acquireLock(threadId, lockId);
+
+      if (acquired) {
+        console.log(`🔒 Lock acquired for thread ${threadId} by ${lockId} after ${attempts + 1} attempt(s)`);
+        return true;
+      }
+
+      attempts++;
+
+      // Only log and wait if we're going to retry
+      if (attempts < maxRetries) {
+        // Check if there's an active run (only every 10 attempts to reduce noise)
+        if (attempts % 10 === 0) {
+          const activeRunId = await this.getActiveRun(threadId);
+          if (activeRunId) {
+            console.log(`⏳ Waiting for active run ${activeRunId} on thread ${threadId}... (attempt ${attempts}/${maxRetries})`);
+          }
+        }
+
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, this.LOCK_RETRY_DELAY));
+      }
+    }
+
+    console.error(`❌ Failed to acquire lock for thread ${threadId} after ${maxRetries} attempts`);
+    return false;
+  }
+
+  /**
+   * Tries to acquire a lock with a limited number of fast retries
+   * Useful when you want to fail fast instead of waiting
+   */
+  async tryAcquireLock(threadId: string, lockId: string, maxRetries: number = 5): Promise<boolean> {
+    for (let i = 0; i < maxRetries; i++) {
       const acquired = await this.acquireLock(threadId, lockId);
 
       if (acquired) {
@@ -96,17 +129,13 @@ export class ThreadLockService {
         return true;
       }
 
-      // Check if there's an active run
-      const activeRunId = await this.getActiveRun(threadId);
-      if (activeRunId) {
-        console.log(`⏳ Waiting for active run ${activeRunId} on thread ${threadId}...`);
+      if (i < maxRetries - 1) {
+        // Short wait between retries (100ms)
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-
-      // Wait before retrying
-      await new Promise((resolve) => setTimeout(resolve, this.LOCK_RETRY_DELAY));
     }
 
-    console.error(`❌ Failed to acquire lock for thread ${threadId} - timeout`);
+    console.log(`⚠️ Failed to acquire lock for thread ${threadId} after ${maxRetries} quick attempts`);
     return false;
   }
 
@@ -223,6 +252,37 @@ export class ThreadLockService {
     } catch (error) {
       console.error('Error checking lock:', error);
       return false;
+    }
+  }
+
+  /**
+   * Forces the release of a lock (use with caution)
+   * This should only be used for cleanup/debugging
+   */
+  async forceClearLock(threadId: string): Promise<void> {
+    try {
+      const lockKey = this.getLockKey(threadId);
+      const activeRunKey = this.getActiveRunKey(threadId);
+
+      await this.redis.del(lockKey);
+      await this.redis.del(activeRunKey);
+
+      console.log(`🧹 Force cleared lock and active run for thread ${threadId}`);
+    } catch (error) {
+      console.error('Error force clearing lock:', error);
+    }
+  }
+
+  /**
+   * Gets the remaining TTL of a lock in seconds
+   */
+  async getLockTTL(threadId: string): Promise<number> {
+    try {
+      const lockKey = this.getLockKey(threadId);
+      return await this.redis.ttl(lockKey);
+    } catch (error) {
+      console.error('Error getting lock TTL:', error);
+      return -1;
     }
   }
 

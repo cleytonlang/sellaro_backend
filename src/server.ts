@@ -14,10 +14,12 @@ import formRoutes from './routes/form';
 import leadRoutes from './routes/lead';
 import leadCommentRoutes from './routes/leadComment';
 import assistantRoutes from './routes/assistant';
+import assistantFunctionRoutes from './routes/assistantFunction';
 import conversationRoutes from './routes/conversation';
 import kanbanRoutes from './routes/kanban';
 import uploadRoutes from './routes/upload';
 import threadRoutes from './routes/thread';
+import adminRoutes from './routes/admin';
 import { settingsRoutes } from './routes/settings';
 import { analyticsRoutes } from './routes/analytics';
 
@@ -67,10 +69,12 @@ server.register(formRoutes, { prefix: '/api/forms' });
 server.register(leadRoutes, { prefix: '/api/leads' });
 server.register(leadCommentRoutes, { prefix: '/api/lead-comments' });
 server.register(assistantRoutes, { prefix: '/api/assistants' });
+server.register(assistantFunctionRoutes, { prefix: '/api' });
 server.register(conversationRoutes, { prefix: '/api/conversations' });
 server.register(kanbanRoutes, { prefix: '/api/kanban-columns' });
 server.register(uploadRoutes, { prefix: '/api/upload' });
 server.register(threadRoutes, { prefix: '/api/threads' });
+server.register(adminRoutes, { prefix: '/api' });
 server.register(settingsRoutes);
 server.register(analyticsRoutes, { prefix: '/api' });
 

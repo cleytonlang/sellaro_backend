@@ -46,6 +46,21 @@ export class AssistantController {
         });
       }
 
+      // Validate token limits
+      if (max_prompt_tokens !== undefined && max_prompt_tokens !== null && max_prompt_tokens < 256) {
+        return reply.status(400).send({
+          success: false,
+          error: 'max_prompt_tokens must be at least 256 or null',
+        });
+      }
+
+      if (max_completion_tokens !== undefined && max_completion_tokens !== null && max_completion_tokens < 1) {
+        return reply.status(400).send({
+          success: false,
+          error: 'max_completion_tokens must be at least 1 or null',
+        });
+      }
+
       // Fetch user's encrypted API key
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -214,6 +229,21 @@ export class AssistantController {
     try {
       const { id } = request.params;
       const updateData = request.body;
+
+      // Validate token limits
+      if (updateData.max_prompt_tokens !== undefined && updateData.max_prompt_tokens !== null && updateData.max_prompt_tokens < 256) {
+        return reply.status(400).send({
+          success: false,
+          error: 'max_prompt_tokens must be at least 256 or null',
+        });
+      }
+
+      if (updateData.max_completion_tokens !== undefined && updateData.max_completion_tokens !== null && updateData.max_completion_tokens < 1) {
+        return reply.status(400).send({
+          success: false,
+          error: 'max_completion_tokens must be at least 1 or null',
+        });
+      }
 
       // Get the existing assistant to access OpenAI ID and user info
       const existingAssistant = await prisma.assistant.findUnique({

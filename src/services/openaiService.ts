@@ -2,10 +2,11 @@ import OpenAI from 'openai';
 import prisma from '../utils/prisma';
 import { decryptToken } from '../utils/crypto';
 import { threadLockService } from './threadLockService';
+import { functionExecutionService } from './functionExecutionService';
 import { v4 as uuidv4 } from 'uuid';
 
 export class OpenAIService {
-  private async getOpenAIClient(userId: string): Promise<OpenAI | null> {
+  async getOpenAIClient(userId: string): Promise<OpenAI | null> {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -104,7 +105,8 @@ export class OpenAIService {
     assistantId: string,
     userMessage: string,
     maxCompletionTokens?: number,
-    maxPromptTokens?: number
+    maxPromptTokens?: number,
+    leadId?: string
   ): Promise<string | null> {
     const lockId = uuidv4();
 
@@ -114,9 +116,9 @@ export class OpenAIService {
         throw new Error('OpenAI client not available');
       }
 
-      // Wait for and acquire lock for this thread
+      // Wait for and acquire lock for this thread (with reduced retry count for faster failure)
       console.log(`🔐 Attempting to acquire lock for thread ${threadId}...`);
-      const lockAcquired = await threadLockService.waitForLock(threadId, lockId);
+      const lockAcquired = await threadLockService.waitForLock(threadId, lockId, 10);
 
       if (!lockAcquired) {
         throw new Error(`Failed to acquire lock for thread ${threadId}`);
@@ -147,11 +149,12 @@ export class OpenAIService {
         };
 
         // Add token limits if specified
-        if (maxCompletionTokens !== undefined) {
+        if (maxCompletionTokens !== undefined && maxCompletionTokens > 0) {
           runParams.max_completion_tokens = maxCompletionTokens;
         }
 
-        if (maxPromptTokens !== undefined) {
+        // OpenAI requires max_prompt_tokens to be at least 256
+        if (maxPromptTokens !== undefined && maxPromptTokens >= 256) {
           runParams.max_prompt_tokens = maxPromptTokens;
         }
 
@@ -165,9 +168,85 @@ export class OpenAIService {
         // Wait for completion
         let runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
 
-        // Poll until run completes
+        // Poll until run completes or requires action
         let pollCount = 0;
-        while (runStatus.status === 'queued' || runStatus.status === 'in_progress') {
+        while (runStatus.status === 'queued' || runStatus.status === 'in_progress' || runStatus.status === 'requires_action') {
+          // Handle function calling
+          if (runStatus.status === 'requires_action' && runStatus.required_action) {
+            console.log(`🔧 Function calling required: ${runStatus.required_action.type}`);
+            
+            if (runStatus.required_action.type === 'submit_tool_outputs') {
+              const toolOutputs: any[] = [];
+
+              for (const toolCall of runStatus.required_action.submit_tool_outputs.tool_calls) {
+                if (toolCall.type === 'function') {
+                  const functionName = toolCall.function.name;
+                  const functionArgs = JSON.parse(toolCall.function.arguments || '{}');
+                  
+                  console.log(`⚙️ Executing function: ${functionName}`, functionArgs);
+                  
+                  try {
+                    // Get conversation to find leadId if not provided
+                    let currentLeadId = leadId;
+                    console.log(`🔍 Initial leadId from parameter: ${currentLeadId}`);
+
+                    if (!currentLeadId) {
+                      console.log(`🔍 Lead ID not provided, fetching from conversation...`);
+                      const conversation = await prisma.conversation.findFirst({
+                        where: { thread_id: threadId },
+                        include: { lead: true },
+                      });
+                      currentLeadId = conversation?.lead_id;
+                      console.log(`🔍 Lead ID from conversation: ${currentLeadId}`);
+                    }
+
+                    if (!currentLeadId) {
+                      throw new Error('Lead ID not found for function execution');
+                    }
+
+                    console.log(`🎯 Executing function with lead_id: ${currentLeadId}`);
+
+                    const result = await functionExecutionService.executeFunction(
+                      functionName,
+                      functionArgs,
+                      currentLeadId,
+                      userId
+                    );
+                    
+                    toolOutputs.push({
+                      tool_call_id: toolCall.id,
+                      output: JSON.stringify(result),
+                    });
+                    
+                    console.log(`✅ Function ${functionName} executed successfully`);
+                  } catch (error) {
+                    console.error(`❌ Error executing function ${functionName}:`, error);
+                    toolOutputs.push({
+                      tool_call_id: toolCall.id,
+                      output: JSON.stringify({
+                        success: false,
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                      }),
+                    });
+                  }
+                }
+              }
+              
+              // Submit tool outputs
+              await openai.beta.threads.runs.submitToolOutputs(run.id, {
+                thread_id: threadId,
+                tool_outputs: toolOutputs,
+              });
+              
+              console.log(`📤 Submitted ${toolOutputs.length} tool output(s)`);
+              
+              // Continue polling
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+              runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
+              continue;
+            }
+          }
+          
           await new Promise((resolve) => setTimeout(resolve, 1000));
           runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
 
@@ -178,7 +257,17 @@ export class OpenAIService {
         }
 
         if (runStatus.status !== 'completed') {
-          console.error('Run failed with status:', runStatus.status);
+          console.error(`❌ Run failed with status: ${runStatus.status}`);
+          if (runStatus.last_error) {
+            console.error('Last error:', runStatus.last_error);
+
+            // Provide user-friendly error messages
+            if (runStatus.last_error.code === 'rate_limit_exceeded') {
+              throw new Error('OpenAI API quota exceeded. Please check your billing details at https://platform.openai.com/account/billing');
+            }
+
+            throw new Error(`OpenAI run failed: ${runStatus.last_error.message}`);
+          }
           return null;
         }
 
@@ -191,31 +280,51 @@ export class OpenAIService {
         }
 
         // Get the assistant's messages
+        console.log(`📨 Fetching messages from thread ${threadId}...`);
         const messages = await openai.beta.threads.messages.list(threadId, {
           order: 'desc',
           limit: 1,
         });
 
+        console.log(`📬 Retrieved ${messages.data.length} message(s)`);
         const lastMessage = messages.data[0];
-        if (!lastMessage || lastMessage.role !== 'assistant') {
+        if (!lastMessage) {
+          console.error('❌ No messages found in thread');
           return null;
         }
+
+        if (lastMessage.role !== 'assistant') {
+          console.error(`❌ Last message role is ${lastMessage.role}, expected 'assistant'`);
+          return null;
+        }
+
+        console.log(`📝 Last message has ${lastMessage.content.length} content item(s)`);
 
         // Extract text content from the message
         const textContent = lastMessage.content.find((content) => content.type === 'text');
         if (textContent && textContent.type === 'text') {
+          console.log(`✅ Successfully extracted assistant response`);
           return textContent.text.value;
         }
 
+        console.error('❌ No text content found in message');
         return null;
       } finally {
         // Always release the lock
         await threadLockService.releaseLock(threadId, lockId);
       }
     } catch (error) {
-      console.error('Error sending message and getting response:', error);
+      console.error('❌ Error sending message and getting response:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       // Ensure lock is released even on error
-      await threadLockService.releaseLock(threadId, lockId);
+      try {
+        await threadLockService.releaseLock(threadId, lockId);
+      } catch (lockError) {
+        console.error('Failed to release lock:', lockError);
+      }
       return null;
     }
   }
