@@ -110,6 +110,17 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     });
     console.log(`[JOB ${job.id}] Assistant message saved with ID: ${assistantMessage.id}`);
 
+    // Check for triggers configured for this assistant
+    console.log(`[JOB ${job.id}] Checking for triggers...`);
+    const triggers = await prisma.trigger.findMany({
+      where: {
+        assistant_id: assistantId,
+        is_active: true,
+      },
+      orderBy: { order: 'asc' },
+    });
+    console.log('gatilhos:', triggers);
+
     console.log(`[JOB ${job.id}] Setting progress to 90%`);
     await job.progress(90);
 
