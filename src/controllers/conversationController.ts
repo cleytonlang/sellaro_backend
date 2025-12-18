@@ -374,18 +374,23 @@ export class ConversationController {
       const { jobId } = request.query;
 
       if (!jobId) {
+        console.error('[STATUS] ❌ Missing jobId in request');
         return reply.status(400).send({
           error: 'jobId is required',
         });
       }
 
+      console.log(`[STATUS] 🔍 Checking status for job: ${jobId}`);
       const jobStatus = await getMessageJobStatus(jobId);
 
       if (!jobStatus) {
+        console.error(`[STATUS] ❌ Job not found: ${jobId}`);
         return reply.status(404).send({
           error: 'Job not found',
         });
       }
+
+      console.log(`[STATUS] ✅ Job ${jobId} - State: ${jobStatus.state}, Progress: ${jobStatus.progress}%`);
 
       return reply.send({
         jobId,
@@ -395,6 +400,7 @@ export class ConversationController {
         failedReason: jobStatus.failedReason,
       });
     } catch (error) {
+      console.error('[STATUS] ❌ Error getting job status:', error);
       request.log.error(error);
       return reply.status(500).send({
         error: 'Failed to get job status',

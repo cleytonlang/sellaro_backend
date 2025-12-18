@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 import prisma from '../utils/prisma';
 import { decryptToken } from '../utils/crypto';
 import { threadLockService } from './threadLockService';
-import { functionExecutionService } from './functionExecutionService';
 import { v4 as uuidv4 } from 'uuid';
 
 export class OpenAIService {
@@ -105,8 +104,7 @@ export class OpenAIService {
     assistantId: string,
     userMessage: string,
     maxCompletionTokens?: number,
-    maxPromptTokens?: number,
-    leadId?: string
+    maxPromptTokens?: number
   ): Promise<string | null> {
     const lockId = uuidv4();
 
@@ -165,88 +163,51 @@ export class OpenAIService {
         // Store the active run ID in Redis
         await threadLockService.setActiveRun(threadId, run.id);
 
-        // Wait for completion
+        // Wait for completion with timeout protection
         let runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
 
-        // Poll until run completes or requires action
+        // Poll until run completes (with max timeout)
         let pollCount = 0;
+        const maxPollTime = 90000; // 90 seconds max for OpenAI processing
+        const startTime = Date.now();
+
         while (runStatus.status === 'queued' || runStatus.status === 'in_progress' || runStatus.status === 'requires_action') {
-          // Handle function calling
-          if (runStatus.status === 'requires_action' && runStatus.required_action) {
-            console.log(`🔧 Function calling required: ${runStatus.required_action.type}`);
-            
-            if (runStatus.required_action.type === 'submit_tool_outputs') {
-              const toolOutputs: any[] = [];
-
-              for (const toolCall of runStatus.required_action.submit_tool_outputs.tool_calls) {
-                if (toolCall.type === 'function') {
-                  const functionName = toolCall.function.name;
-                  const functionArgs = JSON.parse(toolCall.function.arguments || '{}');
-                  
-                  console.log(`⚙️ Executing function: ${functionName}`, functionArgs);
-                  
-                  try {
-                    // Get conversation to find leadId if not provided
-                    let currentLeadId = leadId;
-                    console.log(`🔍 Initial leadId from parameter: ${currentLeadId}`);
-
-                    if (!currentLeadId) {
-                      console.log(`🔍 Lead ID not provided, fetching from conversation...`);
-                      const conversation = await prisma.conversation.findFirst({
-                        where: { thread_id: threadId },
-                        include: { lead: true },
-                      });
-                      currentLeadId = conversation?.lead_id;
-                      console.log(`🔍 Lead ID from conversation: ${currentLeadId}`);
-                    }
-
-                    if (!currentLeadId) {
-                      throw new Error('Lead ID not found for function execution');
-                    }
-
-                    console.log(`🎯 Executing function with lead_id: ${currentLeadId}`);
-
-                    const result = await functionExecutionService.executeFunction(
-                      functionName,
-                      functionArgs,
-                      currentLeadId,
-                      userId
-                    );
-                    
-                    toolOutputs.push({
-                      tool_call_id: toolCall.id,
-                      output: JSON.stringify(result),
-                    });
-                    
-                    console.log(`✅ Function ${functionName} executed successfully`);
-                  } catch (error) {
-                    console.error(`❌ Error executing function ${functionName}:`, error);
-                    toolOutputs.push({
-                      tool_call_id: toolCall.id,
-                      output: JSON.stringify({
-                        success: false,
-                        error: error instanceof Error ? error.message : 'Unknown error',
-                      }),
-                    });
-                  }
-                }
-              }
-              
-              // Submit tool outputs
-              await openai.beta.threads.runs.submitToolOutputs(run.id, {
-                thread_id: threadId,
-                tool_outputs: toolOutputs,
+          // Check if we've exceeded max polling time
+          const elapsedTime = Date.now() - startTime;
+          if (elapsedTime > maxPollTime) {
+            console.error(`❌ OpenAI processing timeout after ${elapsedTime}ms. Cancelling run...`);
+            try {
+              await openai.beta.threads.runs.cancel(run.id, {
+                thread_id: threadId
               });
-              
-              console.log(`📤 Submitted ${toolOutputs.length} tool output(s)`);
-              
-              // Continue polling
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
-              continue;
+            } catch (cancelError) {
+              console.error('Failed to cancel timed out run:', cancelError);
             }
+            throw new Error('OpenAI processing timeout - the assistant took too long to respond');
           }
-          
+
+          // Handle requires_action state (when assistant tries to call functions)
+          if (runStatus.status === 'requires_action') {
+            console.error(`⚠️ Assistant tried to call a function but function calling is disabled`);
+            console.error(`This assistant has functions configured in OpenAI that need to be removed`);
+
+            // Cancel the run since we don't support functions anymore
+            try {
+              await openai.beta.threads.runs.cancel(run.id, {
+                thread_id: threadId
+              });
+            } catch (cancelError) {
+              console.error('Failed to cancel run:', cancelError);
+            }
+
+            throw new Error('This assistant has function calling enabled in OpenAI. Please remove all functions from this assistant in the OpenAI dashboard, or recreate the assistant without functions.');
+          }
+
+          // Log progress every 10 seconds
+          if (pollCount % 10 === 0) {
+            console.log(`⏳ Waiting for OpenAI... Status: ${runStatus.status}, Elapsed: ${Math.floor(elapsedTime / 1000)}s / 90s`);
+          }
+
           await new Promise((resolve) => setTimeout(resolve, 1000));
           runStatus = await openai.beta.threads.runs.retrieve(run.id, { thread_id: threadId });
 
@@ -258,6 +219,21 @@ export class OpenAIService {
 
         if (runStatus.status !== 'completed') {
           console.error(`❌ Run failed with status: ${runStatus.status}`);
+
+          // Handle incomplete status
+          if (runStatus.status === 'incomplete') {
+            const incompleteDetails = (runStatus as any).incomplete_details;
+            console.error('Incomplete details:', incompleteDetails);
+
+            if (incompleteDetails?.reason === 'max_completion_tokens') {
+              throw new Error('OpenAI response was cut off - max completion tokens reached. Please increase max_completion_tokens in assistant settings.');
+            } else if (incompleteDetails?.reason === 'max_prompt_tokens') {
+              throw new Error('OpenAI prompt was too large - max prompt tokens exceeded. Please reduce the conversation length or increase max_prompt_tokens.');
+            } else {
+              throw new Error('OpenAI run was incomplete - the API failed to complete the request. Please try again.');
+            }
+          }
+
           if (runStatus.last_error) {
             console.error('Last error:', runStatus.last_error);
 
@@ -268,7 +244,8 @@ export class OpenAIService {
 
             throw new Error(`OpenAI run failed: ${runStatus.last_error.message}`);
           }
-          return null;
+
+          throw new Error(`OpenAI run failed with status: ${runStatus.status}`);
         }
 
         // Log token usage

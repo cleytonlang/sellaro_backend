@@ -87,8 +87,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
       openaiAssistantId,
       content,
       assistant?.max_completion_tokens ?? undefined,
-      assistant?.max_prompt_tokens ?? undefined,
-      leadId
+      assistant?.max_prompt_tokens ?? undefined
     );
     console.log(`[JOB ${job.id}] Received response from OpenAI (${assistantResponse ? assistantResponse.length : 0} chars)`);
 
@@ -179,6 +178,111 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
       }
 
       // Don't retry quota errors
+      return {
+        success: false,
+        assistantMessageId: undefined,
+        assistantMessageContent: undefined,
+      };
+    }
+
+    // Check if error is related to OpenAI timeout
+    if (error instanceof Error && error.message.includes('timeout')) {
+      console.log(`[JOB ${job.id}] ⏱️ OpenAI timeout - saving error message to user`);
+
+      // Save timeout error as assistant message so user sees it
+      try {
+        await prisma.message.create({
+          data: {
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: '⏱️ A API da OpenAI está demorando muito para responder. Isso pode acontecer quando:\n\n• A OpenAI está com muita demanda\n• Sua pergunta é muito complexa\n• Há problemas temporários com a API\n\nPor favor, tente novamente em alguns instantes.',
+          },
+        });
+      } catch (err) {
+        console.error(`[JOB ${job.id}] Failed to save timeout error message to database:`, err);
+      }
+
+      // Don't retry timeout errors (they'll just timeout again)
+      return {
+        success: false,
+        assistantMessageId: undefined,
+        assistantMessageContent: undefined,
+      };
+    }
+
+    // Check if error is related to token limits
+    if (error instanceof Error && (error.message.includes('max_completion_tokens') || error.message.includes('max_prompt_tokens'))) {
+      console.log(`[JOB ${job.id}] 📊 Token limit error - saving error message to user`);
+
+      // Determine which limit was hit
+      const isCompletionLimit = error.message.includes('max_completion_tokens');
+
+      // Save token limit error as assistant message so user sees it
+      try {
+        await prisma.message.create({
+          data: {
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: isCompletionLimit
+              ? '📊 **Limite de Tokens Atingido**\n\nA resposta do assistente foi cortada porque atingiu o limite máximo de tokens de resposta (max_completion_tokens).\n\n**Como resolver:**\n1. Vá para o painel de assistentes\n2. Edite este assistente\n3. Aumente o valor de "Máximo de Tokens de Resposta" (recomendado: 1000-2000)\n\n**Nota:** Tokens maiores permitem respostas mais longas, mas aumentam o custo por mensagem.'
+              : '📊 **Limite de Prompt Atingido**\n\nA conversa ficou muito longa e excedeu o limite de tokens do prompt (max_prompt_tokens).\n\n**Como resolver:**\n1. Inicie uma nova conversa\n2. OU vá para o painel de assistentes e aumente o limite de tokens do prompt\n\n**Nota:** Conversas muito longas consomem mais tokens e aumentam os custos.',
+          },
+        });
+      } catch (err) {
+        console.error(`[JOB ${job.id}] Failed to save token limit error message to database:`, err);
+      }
+
+      // Don't retry token limit errors (they'll just fail again with the same limits)
+      return {
+        success: false,
+        assistantMessageId: undefined,
+        assistantMessageContent: undefined,
+      };
+    }
+
+    // Check if error is related to function calling
+    if (error instanceof Error && error.message.includes('function calling')) {
+      console.log(`[JOB ${job.id}] ⚠️ Function calling error - saving error message to user`);
+
+      // Save function calling error as assistant message so user sees it
+      try {
+        await prisma.message.create({
+          data: {
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: '⚠️ **Configuração Incorreta do Assistente**\n\nEste assistente ainda tem funções (function calling) configuradas na OpenAI, mas o sistema não suporta mais essa funcionalidade.\n\n**Como resolver:**\n1. Vá para o painel de assistentes\n2. Exclua este assistente\n3. Crie um novo assistente\n\nO novo assistente será criado sem funções e funcionará corretamente.',
+          },
+        });
+      } catch (err) {
+        console.error(`[JOB ${job.id}] Failed to save function calling error message to database:`, err);
+      }
+
+      // Don't retry function calling errors (they'll just fail again)
+      return {
+        success: false,
+        assistantMessageId: undefined,
+        assistantMessageContent: undefined,
+      };
+    }
+
+    // Check if error is related to assistant not found
+    if (error instanceof Error && (error.message.includes('No assistant found') || error.message.includes('404'))) {
+      console.log(`[JOB ${job.id}] ⚠️ Assistant not found in OpenAI - saving error message to user`);
+
+      // Save assistant not found error as assistant message so user sees it
+      try {
+        await prisma.message.create({
+          data: {
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: '⚠️ **Assistente Não Encontrado**\n\nEsta conversa está usando um assistente que foi deletado da OpenAI.\n\n**Como resolver:**\n1. Crie um novo lead/conversa\n2. OU atualize o assistente deste lead no painel\n\n**Nota:** Conversas antigas não podem ser reutilizadas após deletar um assistente.',
+          },
+        });
+      } catch (err) {
+        console.error(`[JOB ${job.id}] Failed to save assistant not found error message to database:`, err);
+      }
+
+      // Don't retry assistant not found errors (they'll just fail again)
       return {
         success: false,
         assistantMessageId: undefined,

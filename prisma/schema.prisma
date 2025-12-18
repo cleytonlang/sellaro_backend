@@ -104,25 +104,9 @@ model Assistant {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   forms                 Form[]
   conversations         Conversation[]
-  functions             AssistantFunction[]
 
   @@index([userId])
   @@map("assistant")
-}
-
-model AssistantFunction {
-  id                    String   @id @default(cuid())
-  assistant_id          String
-  type                  String   // "move_lead_column" | "add_lead_comment"
-  instructions          String   @db.Text // Orientações para a assistente sobre quando usar a função
-  openai_function_id    String?  // ID da função na OpenAI (se criada)
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
-
-  assistant             Assistant @relation(fields: [assistant_id], references: [id], onDelete: Cascade)
-
-  @@index([assistant_id])
-  @@map("assistant_function")
 }
 
 model Form {
