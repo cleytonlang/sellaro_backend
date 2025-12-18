@@ -1,6 +1,12 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 
+// Generate unique identifier: #<id><random10>#
+function generateIdentifier(id: string): string {
+  const randomString = Math.random().toString(36).substring(2, 12).toLowerCase();
+  return `#${id}${randomString}#`;
+}
+
 interface TriggerParams {
   assistantId: string;
   id?: string;
@@ -95,16 +101,27 @@ export async function createTrigger(
       triggerOrder = lastTrigger ? lastTrigger.order + 1 : 0;
     }
 
+    // Create trigger first to get the ID
     const trigger = await prisma.trigger.create({
       data: {
         assistant_id: assistantId,
         type,
         config,
         order: triggerOrder,
+        identifier: '', // Temporary value
       },
     });
 
-    return reply.status(201).send(trigger);
+    // Generate unique identifier using the trigger ID
+    const identifier = generateIdentifier(trigger.id);
+
+    // Update trigger with the generated identifier
+    const updatedTrigger = await prisma.trigger.update({
+      where: { id: trigger.id },
+      data: { identifier },
+    });
+
+    return reply.status(201).send(updatedTrigger);
   } catch (error) {
     console.error('Error creating trigger:', error);
     return reply.status(500).send({ error: 'Failed to create trigger' });

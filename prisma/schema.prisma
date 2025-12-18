@@ -260,6 +260,7 @@ model Trigger {
   assistant_id  String
   type          String   // CHANGE_STAGE, SEND_EMAIL
   order         Int      // Order of execution
+  identifier    String   @unique @default("")  // Unique identifier: #<id><random10>#
 
   // Configuration data (JSON structure depends on type)
   // For CHANGE_STAGE: { formId, kanbanColumnId }
@@ -275,5 +276,6 @@ model Trigger {
   @@index([assistant_id])
   @@index([type])
   @@index([order])
+  @@index([identifier])
   @@map("trigger")
 }
