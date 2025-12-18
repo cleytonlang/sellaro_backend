@@ -185,6 +185,14 @@ Colunas do quadro kanban
 - Helmet para headers de segurança
 - Autenticação via token de sessão
 
+## 📚 Documentação
+
+A documentação técnica completa do backend está organizada na pasta `/docs`:
+
+- **[Índice da Documentação](./docs/README.md)** - Acesse aqui toda a documentação do projeto
+- Setup e Configuração - Guias de instalação e configuração de Redis/Upstash
+- Troubleshooting - Resolução de problemas e debugging
+
 ## Licença
 
 ISC
