@@ -119,7 +119,30 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
       },
       orderBy: { order: 'asc' },
     });
-    console.log('gatilhos:', triggers);
+
+    console.log('====================== gatilhos:', triggers);
+
+    // Check if any trigger identifier appears in the assistant response
+    if (triggers.length > 0) {
+      console.log(`[JOB ${job.id}] Checking if trigger identifiers are in response...`);
+
+      const triggeredActions = triggers.filter(trigger => {
+        const identifierFound = assistantResponse.includes(trigger.identifier);
+        if (identifierFound) {
+          console.log(`✅ Trigger identifier found in response: ${trigger.identifier}`);
+          console.log(`   Type: ${trigger.type}`);
+          console.log(`   Config:`, trigger.config);
+        }
+        return identifierFound;
+      });
+
+      if (triggeredActions.length > 0) {
+        console.log(`\n🎯 [JOB ${job.id}] ${triggeredActions.length} trigger(s) matched in response!`);
+        console.log('Triggered actions:', triggeredActions);
+      } else {
+        console.log(`[JOB ${job.id}] No trigger identifiers found in response`);
+      }
+    }
 
     console.log(`[JOB ${job.id}] Setting progress to 90%`);
     await job.progress(90);
