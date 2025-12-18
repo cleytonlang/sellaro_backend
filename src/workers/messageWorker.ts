@@ -89,6 +89,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
       assistant?.max_completion_tokens ?? undefined,
       assistant?.max_prompt_tokens ?? undefined
     );
+    
     console.log(`[JOB ${job.id}] Received response from OpenAI (${assistantResponse ? assistantResponse.length : 0} chars)`);
 
     console.log(`[JOB ${job.id}] Setting progress to 70%`);
@@ -108,11 +109,16 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
         content: assistantResponse,
       },
     });
+    let assistantMessageChanges = assistantMessage.content
     console.log(`[JOB ${job.id}] Assistant message saved with ID: ${assistantMessage.id}`);
 
     // Check for triggers configured for this assistant
     console.log(`[JOB ${job.id}] Checking for triggers...`);
     const triggers = await prisma.trigger.findMany({
+      select: {
+        identifier: true,
+        config: true
+      },
       where: {
         assistant_id: assistantId,
         is_active: true,
@@ -122,25 +128,21 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
 
     // Check if any trigger identifier appears in the assistant response
     if (triggers.length > 0) {
-      console.log(`[JOB ${job.id}] Checking if trigger identifiers are in response...`);
+      for(const event of triggers){
+        const identifierFound = assistantResponse.includes(event.identifier);
+        if(identifierFound){
+          assistantMessageChanges = assistantMessageChanges.replaceAll(event.identifier, "");
 
-      const triggeredActions = triggers.filter(trigger => {
-        const identifierFound = assistantResponse.includes(trigger.identifier);
-        if (identifierFound) {
-          console.log(`✅ Trigger identifier found in response: ${trigger.identifier}`);
-          console.log(`   Type: ${trigger.type}`);
-          console.log(`   Config:`, trigger.config);
+          if(event.config && event.config?.formId){
+            console.log("============================= Alterar Lead de coluna")
+          }
+          if(event.config && event.config?.content){
+            console.log("============================= Enviar email")
+          }
         }
-        return identifierFound;
-      });
-
-      console.log("triggeredActions ==============================> ",triggeredActions)
-      if (triggeredActions.length > 0) {
-        console.log(`\n🎯 [JOB ${job.id}] ${triggeredActions.length} trigger(s) matched in response!`);
-        console.log('Triggered actions:', triggeredActions);
-      } else {
-        console.log(`[JOB ${job.id}] No trigger identifiers found in response`);
       }
+      // const triggersFilter = triggers.map
+      console.log(`[JOB ${job.id}] Checking if trigger identifiers are in response...`);
     }
 
     console.log(`[JOB ${job.id}] Setting progress to 90%`);
@@ -170,7 +172,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     return {
       success: true,
       assistantMessageId: assistantMessage.id,
-      assistantMessageContent: assistantMessage.content,
+      assistantMessageContent: assistantMessageChanges,
     };
   } catch (error) {
     console.error(`\n${'='.repeat(80)}`);
