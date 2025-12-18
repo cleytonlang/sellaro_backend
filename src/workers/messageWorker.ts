@@ -120,8 +120,6 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
       orderBy: { order: 'asc' },
     });
 
-    console.log('====================== gatilhos:', triggers);
-
     // Check if any trigger identifier appears in the assistant response
     if (triggers.length > 0) {
       console.log(`[JOB ${job.id}] Checking if trigger identifiers are in response...`);
@@ -136,6 +134,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
         return identifierFound;
       });
 
+      console.log("triggeredActions ==============================> ",triggeredActions)
       if (triggeredActions.length > 0) {
         console.log(`\n🎯 [JOB ${job.id}] ${triggeredActions.length} trigger(s) matched in response!`);
         console.log('Triggered actions:', triggeredActions);
