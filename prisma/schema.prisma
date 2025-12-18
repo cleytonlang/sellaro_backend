@@ -104,6 +104,7 @@ model Assistant {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   forms                 Form[]
   conversations         Conversation[]
+  triggers              Trigger[]
 
   @@index([userId])
   @@map("assistant")
@@ -252,4 +253,27 @@ model LeadComment {
   @@index([user_id])
   @@index([created_at])
   @@map("lead_comment")
+}
+
+model Trigger {
+  id            String   @id @default(cuid())
+  assistant_id  String
+  type          String   // CHANGE_STAGE, SEND_EMAIL
+  order         Int      // Order of execution
+
+  // Configuration data (JSON structure depends on type)
+  // For CHANGE_STAGE: { formId, kanbanColumnId }
+  // For SEND_EMAIL: { subject, content }
+  config        Json
+
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  assistant     Assistant @relation(fields: [assistant_id], references: [id], onDelete: Cascade)
+
+  @@index([assistant_id])
+  @@index([type])
+  @@index([order])
+  @@map("trigger")
 }
