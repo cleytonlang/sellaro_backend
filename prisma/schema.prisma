@@ -264,7 +264,8 @@ model Trigger {
 
   // Configuration data (JSON structure depends on type)
   // For CHANGE_STAGE: { formId, kanbanColumnId }
-  // For SEND_EMAIL: { subject, content }
+  // For SEND_EMAIL: { recipients, subject, content }
+  //   - recipients: String with comma-separated emails (e.g., "email1@example.com,email2@example.com")
   config        Json
 
   is_active     Boolean  @default(true)
@@ -272,10 +273,35 @@ model Trigger {
   updated_at    DateTime @updatedAt
 
   assistant     Assistant @relation(fields: [assistant_id], references: [id], onDelete: Cascade)
+  logs          TriggerLog[]
 
   @@index([assistant_id])
   @@index([type])
   @@index([order])
   @@index([identifier])
   @@map("trigger")
+}
+
+model TriggerLog {
+  id            String   @id @default(cuid())
+  trigger_id    String
+  lead_id       String
+  type          String   // CHANGE_STAGE, SEND_EMAIL
+
+  // Data that was used/changed
+  data          Json
+
+  // Result
+  success       Boolean
+  error_message String?  @db.Text
+
+  created_at    DateTime @default(now())
+
+  trigger       Trigger  @relation(fields: [trigger_id], references: [id], onDelete: Cascade)
+
+  @@index([trigger_id])
+  @@index([lead_id])
+  @@index([type])
+  @@index([created_at])
+  @@map("trigger_log")
 }

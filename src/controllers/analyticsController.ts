@@ -6,18 +6,12 @@ export class AnalyticsController {
    * Get leads created per day for the last 30 days
    */
   async getLeadsCreatedPerDay(
-    request: FastifyRequest<{ Querystring: { userId: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
-
-      if (!userId) {
-        return reply.status(400).send({
-          success: false,
-          error: 'userId is required',
-        });
-      }
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();
@@ -82,18 +76,12 @@ export class AnalyticsController {
    * (leads that had their kanban column changed or form data updated)
    */
   async getLeadsUpdatedPerDay(
-    request: FastifyRequest<{ Querystring: { userId: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
-
-      if (!userId) {
-        return reply.status(400).send({
-          success: false,
-          error: 'userId is required',
-        });
-      }
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();
@@ -153,18 +141,12 @@ export class AnalyticsController {
    * Get messages sent per day for the last 30 days
    */
   async getMessagesPerDay(
-    request: FastifyRequest<{ Querystring: { userId: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
-
-      if (!userId) {
-        return reply.status(400).send({
-          success: false,
-          error: 'userId is required',
-        });
-      }
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();

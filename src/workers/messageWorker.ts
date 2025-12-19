@@ -2,6 +2,7 @@ import { Job } from 'bull';
 import { messageQueue, MessageJobData, MessageJobResult } from '../queues/messageQueue';
 import { openaiService } from '../services/openaiService';
 import { threadLockService } from '../services/threadLockService';
+import { emailService } from '../services/emailService';
 import prisma from '../utils/prisma';
 
 // Process message job
@@ -116,7 +117,9 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     console.log(`[JOB ${job.id}] Checking for triggers...`);
     const triggers = await prisma.trigger.findMany({
       select: {
+        id: true,
         identifier: true,
+        type: true,
         config: true
       },
       where: {
@@ -129,15 +132,126 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
     // Check if any trigger identifier appears in the assistant response
     if (triggers.length > 0) {
       for(const event of triggers){
+        assistantMessageChanges = assistantMessageChanges.replaceAll(event.identifier, "");
         const identifierFound = assistantResponse.includes(event.identifier);
         if(identifierFound){
-          assistantMessageChanges = assistantMessageChanges.replaceAll(event.identifier, "");
+          if(event.config && typeof event.config === 'object' && !Array.isArray(event.config)){
+            const config = event.config as Record<string, any>;
 
-          if(event.config && event.config?.formId){
-            console.log("============================= Alterar Lead de coluna")
-          }
-          if(event.config && event.config?.content){
-            console.log("============================= Enviar email")
+            if(config.formId){
+              const formId = config.formId;
+              const kanbanColumnId = config.kanbanColumnId;
+
+              try {
+                await prisma.lead.update({
+                  where: { id: leadId },
+                  data: {
+                    form_id: formId,
+                    kanban_column_id: kanbanColumnId,
+                    updated_at: new Date(),
+                  },
+                });
+
+                // Log successful trigger execution
+                await prisma.triggerLog.create({
+                  data: {
+                    trigger_id: event.id,
+                    lead_id: leadId,
+                    type: event.type,
+                    data: {
+                      formId,
+                      kanbanColumnId,
+                      previousFormId: null, // Você pode pegar o valor anterior se necessário
+                      previousKanbanColumnId: null,
+                    },
+                    success: true,
+                  },
+                });
+
+                console.log(`[JOB ${job.id}] Lead ${leadId} updated - form_id: ${formId}, kanban_column_id: ${kanbanColumnId}`)
+              } catch (error) {
+                // Log failed trigger execution
+                await prisma.triggerLog.create({
+                  data: {
+                    trigger_id: event.id,
+                    lead_id: leadId,
+                    type: event.type,
+                    data: {
+                      formId,
+                      kanbanColumnId,
+                    },
+                    success: false,
+                    error_message: error instanceof Error ? error.message : 'Unknown error',
+                  },
+                });
+
+                console.error(`[JOB ${job.id}] Failed to update lead ${leadId}:`, error);
+                throw error;
+              }
+            }
+            if(config.content){
+              const recipients = config.recipients; // String com emails separados por vírgula
+              const emailSubject = config.subject;
+              const emailContent = config.content;
+
+              console.log(`[JOB ${job.id}] Preparing to send email to: ${recipients}`)
+              console.log(`[JOB ${job.id}] Email subject: ${emailSubject}`)
+
+              try {
+                // Get lead data to include in email
+                const lead = await prisma.lead.findUnique({
+                  where: { id: leadId },
+                  select: { form_data: true },
+                });
+
+                if (!lead) {
+                  throw new Error(`Lead ${leadId} not found`);
+                }
+
+                // Send email with lead data
+                await emailService.sendLeadEmail(
+                  recipients,
+                  emailSubject,
+                  emailContent,
+                  lead.form_data as Record<string, any>
+                );
+
+                // Log successful trigger execution
+                await prisma.triggerLog.create({
+                  data: {
+                    trigger_id: event.id,
+                    lead_id: leadId,
+                    type: event.type,
+                    data: {
+                      recipients,
+                      subject: emailSubject,
+                      sentAt: new Date().toISOString(),
+                    },
+                    success: true,
+                  },
+                });
+
+                console.log(`[JOB ${job.id}] Email sent successfully to: ${recipients}`)
+              } catch (error) {
+                // Log failed trigger execution
+                await prisma.triggerLog.create({
+                  data: {
+                    trigger_id: event.id,
+                    lead_id: leadId,
+                    type: event.type,
+                    data: {
+                      recipients,
+                      subject: emailSubject,
+                    },
+                    success: false,
+                    error_message: error instanceof Error ? error.message : 'Unknown error',
+                  },
+                });
+
+                console.error(`[JOB ${job.id}] Failed to send email:`, error);
+                // Don't throw - we don't want email failures to stop the job
+              }
+            }
           }
         }
       }

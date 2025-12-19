@@ -5,7 +5,6 @@ export class FormController {
   async create(
     request: FastifyRequest<{
       Body: {
-        userId: string;
         name: string;
         description?: string;
         fields: any;
@@ -16,7 +15,9 @@ export class FormController {
     reply: FastifyReply
   ) {
     try {
-      const { userId, name, description, fields, settings, assistant_id } = request.body;
+      // SEGURANÇA: userId vem do token autenticado, não do body da request
+      const userId = request.user!.id;
+      const { name, description, fields, settings, assistant_id } = request.body;
 
       const form = await prisma.form.create({
         data: {
@@ -53,14 +54,15 @@ export class FormController {
   }
 
   async getAll(
-    request: FastifyRequest<{ Querystring: { userId?: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
+      // SEGURANÇA: userId vem do token autenticado, não da query string
+      const userId = request.user!.id;
 
       const forms = await prisma.form.findMany({
-        where: userId ? { userId } : undefined,
+        where: { userId },
         include: {
           assistant: true,
           _count: {
@@ -94,6 +96,8 @@ export class FormController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
 
       const form = await prisma.form.findUnique({
@@ -111,6 +115,14 @@ export class FormController {
         return reply.status(404).send({
           success: false,
           error: 'Form not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica se o form pertence ao usuário autenticado
+      if (form.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this form',
         });
       }
 
@@ -176,8 +188,30 @@ export class FormController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
       const data = request.body;
+
+      // SEGURANÇA: Verifica ownership antes de atualizar
+      const existingForm = await prisma.form.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!existingForm) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Form not found',
+        });
+      }
+
+      if (existingForm.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this form',
+        });
+      }
 
       const form = await prisma.form.update({
         where: { id },
@@ -202,7 +236,29 @@ export class FormController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
+
+      // SEGURANÇA: Verifica ownership antes de deletar
+      const existingForm = await prisma.form.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!existingForm) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Form not found',
+        });
+      }
+
+      if (existingForm.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this form',
+        });
+      }
 
       await prisma.form.delete({
         where: { id },
@@ -226,7 +282,29 @@ export class FormController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
+
+      // SEGURANÇA: Verifica ownership antes de retornar colunas
+      const form = await prisma.form.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!form) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Form not found',
+        });
+      }
+
+      if (form.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this form',
+        });
+      }
 
       const columns = await prisma.kanbanColumn.findMany({
         where: { form_id: id },

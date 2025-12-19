@@ -8,7 +8,6 @@ export class AssistantController {
   async create(
     request: FastifyRequest<{
       Body: {
-        userId: string;
         name: string;
         system_prompt: string;
         initial_message: string;
@@ -24,8 +23,10 @@ export class AssistantController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+
       const {
-        userId,
         name,
         system_prompt,
         initial_message,
@@ -138,14 +139,15 @@ export class AssistantController {
   }
 
   async getAll(
-    request: FastifyRequest<{ Querystring: { userId?: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       const assistants = await prisma.assistant.findMany({
-        where: userId ? { userId } : undefined,
+        where: { userId },
         include: {
           _count: {
             select: {
@@ -175,6 +177,8 @@ export class AssistantController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
 
       const assistant = await prisma.assistant.findUnique({
@@ -192,6 +196,14 @@ export class AssistantController {
         return reply.status(404).send({
           success: false,
           error: 'Assistant not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership
+      if (assistant.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this assistant',
         });
       }
 
@@ -227,6 +239,8 @@ export class AssistantController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
       const updateData = request.body;
 
@@ -255,6 +269,14 @@ export class AssistantController {
         return reply.status(404).send({
           success: false,
           error: 'Assistant not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership antes de atualizar
+      if (existingAssistant.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this assistant',
         });
       }
 
@@ -321,6 +343,8 @@ export class AssistantController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { id } = request.params;
 
       // Get the existing assistant to access OpenAI ID and user info
@@ -333,6 +357,14 @@ export class AssistantController {
         return reply.status(404).send({
           success: false,
           error: 'Assistant not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership antes de deletar
+      if (existingAssistant.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this assistant',
         });
       }
 
@@ -376,18 +408,12 @@ export class AssistantController {
   }
 
   async getModels(
-    request: FastifyRequest<{ Querystring: { userId: string } }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.query;
-
-      if (!userId) {
-        return reply.status(400).send({
-          success: false,
-          error: 'userId is required',
-        });
-      }
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       const models = await openaiService.getAvailableModels(userId);
 

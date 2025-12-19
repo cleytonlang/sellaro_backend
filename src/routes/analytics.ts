@@ -1,27 +1,30 @@
 import { FastifyInstance } from 'fastify';
 import { AnalyticsController } from '../controllers/analyticsController';
+import { authMiddleware } from '../middlewares/auth';
 
 const analyticsController = new AnalyticsController();
 
 export async function analyticsRoutes(fastify: FastifyInstance) {
-  // Get leads created per day (last 30 days)
-  fastify.get<{
-    Querystring: { userId: string };
-  }>('/analytics/leads-created', async (request, reply) => {
-    return analyticsController.getLeadsCreatedPerDay(request, reply);
-  });
+  // Todas as rotas de analytics requerem autenticação
+  // O userId agora vem do request.user (validado pelo middleware)
+  fastify.get('/analytics/leads-created',
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      return analyticsController.getLeadsCreatedPerDay(request, reply);
+    }
+  );
 
-  // Get leads updated per day (last 30 days)
-  fastify.get<{
-    Querystring: { userId: string };
-  }>('/analytics/leads-updated', async (request, reply) => {
-    return analyticsController.getLeadsUpdatedPerDay(request, reply);
-  });
+  fastify.get('/analytics/leads-updated',
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      return analyticsController.getLeadsUpdatedPerDay(request, reply);
+    }
+  );
 
-  // Get messages per day (last 30 days)
-  fastify.get<{
-    Querystring: { userId: string };
-  }>('/analytics/messages', async (request, reply) => {
-    return analyticsController.getMessagesPerDay(request, reply);
-  });
+  fastify.get('/analytics/messages',
+    { preHandler: authMiddleware },
+    async (request, reply) => {
+      return analyticsController.getMessagesPerDay(request, reply);
+    }
+  );
 }

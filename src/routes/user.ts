@@ -1,11 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { UserController } from '../controllers/userController';
+import { authMiddleware } from '../middlewares/auth';
 
 const userController = new UserController();
 
 export default async function userRoutes(fastify: FastifyInstance) {
-  fastify.get('/', userController.getAll);
-  fastify.get('/:id', userController.getById);
-  fastify.put('/:id', userController.update);
-  fastify.delete('/:id', userController.delete);
+  // Todas as rotas de user requerem autenticação
+  fastify.get('/', { preHandler: authMiddleware }, userController.getAll);
+  fastify.get('/:id', { preHandler: authMiddleware }, userController.getById);
+  fastify.put('/:id', { preHandler: authMiddleware }, userController.update);
+  fastify.delete('/:id', { preHandler: authMiddleware }, userController.delete);
 }

@@ -1,19 +1,20 @@
 import { FastifyInstance } from 'fastify';
 import { FormController } from '../controllers/formController';
+import { authMiddleware } from '../middlewares/auth';
 
 const formController = new FormController();
 
 export default async function formRoutes(fastify: FastifyInstance) {
-  // Specific routes first
+  // Rota pública (embed não requer autenticação)
   fastify.get('/embed/:embedCode', formController.getByEmbedCode);
 
-  // General routes
-  fastify.post('/', formController.create);
-  fastify.get('/', formController.getAll);
+  // Rotas protegidas (requerem autenticação)
+  fastify.post('/', { preHandler: authMiddleware }, formController.create);
+  fastify.get('/', { preHandler: authMiddleware }, formController.getAll);
 
-  // Dynamic routes last
-  fastify.get('/:id/kanban-columns', formController.getKanbanColumns);
-  fastify.get('/:id', formController.getById);
-  fastify.put('/:id', formController.update);
-  fastify.delete('/:id', formController.delete);
+  // Rotas dinâmicas protegidas
+  fastify.get('/:id/kanban-columns', { preHandler: authMiddleware }, formController.getKanbanColumns);
+  fastify.get('/:id', { preHandler: authMiddleware }, formController.getById);
+  fastify.put('/:id', { preHandler: authMiddleware }, formController.update);
+  fastify.delete('/:id', { preHandler: authMiddleware }, formController.delete);
 }

@@ -4,13 +4,12 @@ import { encryptToken, decryptToken } from '../utils/crypto'
 
 export class SettingsController {
   async getSettings(
-    request: FastifyRequest<{
-      Params: { userId: string }
-    }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.params
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -66,7 +65,6 @@ export class SettingsController {
 
   async updateSettings(
     request: FastifyRequest<{
-      Params: { userId: string }
       Body: {
         openai_api_key?: string
       }
@@ -74,7 +72,8 @@ export class SettingsController {
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.params
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
       const { openai_api_key } = request.body
 
       const user = await prisma.user.findUnique({
@@ -142,13 +141,12 @@ export class SettingsController {
   }
 
   async getDecryptedApiKey(
-    request: FastifyRequest<{
-      Params: { userId: string }
-    }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.params
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -196,13 +194,12 @@ export class SettingsController {
   }
 
   async validateApiKey(
-    request: FastifyRequest<{
-      Params: { userId: string }
-    }>,
+    request: FastifyRequest,
     reply: FastifyReply
   ) {
     try {
-      const { userId } = request.params
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
