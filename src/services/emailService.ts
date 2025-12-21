@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import prisma from '../utils/prisma';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -46,12 +47,14 @@ export const emailService = {
    * @param subject - Email subject
    * @param content - Email content
    * @param leadData - Lead form data to include in email
+   * @param formId - Form ID to get field labels
    */
   async sendLeadEmail(
     recipients: string,
     subject: string,
     content: string,
-    leadData: Record<string, any>
+    leadData: Record<string, any>,
+    formId: string
   ) {
     // Split and clean recipient emails
     const recipientEmails = recipients
@@ -63,9 +66,28 @@ export const emailService = {
       throw new Error('No valid recipient emails provided');
     }
 
-    // Build HTML email with lead data
+    // Fetch form to get field labels
+    const form = await prisma.form.findUnique({
+      where: { id: formId },
+      select: { fields: true },
+    });
+
+    // Create a map of field IDs to labels
+    const fieldLabelsMap: Record<string, string> = {};
+    if (form && form.fields && Array.isArray(form.fields)) {
+      for (const field of form.fields as any[]) {
+        if (field.id && field.label) {
+          fieldLabelsMap[field.id] = field.label;
+        }
+      }
+    }
+
+    // Build HTML email with lead data using proper labels
     const leadDataHtml = Object.entries(leadData)
-      .map(([key, value]) => `<li><strong>${key}:</strong> ${value}</li>`)
+      .map(([key, value]) => {
+        const label = fieldLabelsMap[key] || key;
+        return `<li><strong>${label}:</strong> ${value}</li>`;
+      })
       .join('');
 
     const html = `
@@ -86,7 +108,7 @@ export const emailService = {
         <body>
           <div class="container">
             <div class="header">
-              <h2>Novo Lead Capturado</h2>
+              <h2>${subject}</h2>
             </div>
             <div class="content">
               <div>${content}</div>

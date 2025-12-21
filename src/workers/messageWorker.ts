@@ -201,7 +201,7 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                 // Get lead data to include in email
                 const lead = await prisma.lead.findUnique({
                   where: { id: leadId },
-                  select: { form_data: true },
+                  select: { form_data: true, form_id: true },
                 });
 
                 if (!lead) {
@@ -213,7 +213,8 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                   recipients,
                   emailSubject,
                   emailContent,
-                  lead.form_data as Record<string, any>
+                  lead.form_data as Record<string, any>,
+                  lead.form_id
                 );
 
                 // Log successful trigger execution
