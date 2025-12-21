@@ -42,7 +42,8 @@ async function testEmailService() {
       'your-test-email@example.com', // ⚠️ CHANGE THIS to your email
       'Test Email - Lead Capturado',
       'Este é um email de teste do sistema de triggers. Um novo lead foi capturado!',
-      testLeadData
+      testLeadData,
+      'test-form-id' // Test form ID
     );
 
     console.log('✅ Email sent successfully!');
