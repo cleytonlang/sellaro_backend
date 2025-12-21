@@ -1,6 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 import { openaiService } from '../services/openaiService';
+import { addWebhookToQueue } from '../queues/webhookQueue';
 
 interface FormField {
   id: string;
@@ -226,6 +227,44 @@ Instruções:
         console.log(`ℹ️ Form ${form_id} has no assistant, skipping conversation creation`);
       }
 
+      // Trigger webhooks for the new lead's column (usually "Novo")
+      console.log(`📍 Lead ${lead.id} created in column ${kanbanColumn.id} - checking for webhooks...`);
+
+      // Get active webhooks for the column
+      const webhooks = await prisma.columnWebhook.findMany({
+        where: {
+          kanban_column_id: kanbanColumn.id,
+          is_active: true,
+        },
+      });
+
+      if (webhooks.length > 0) {
+        console.log(`🔗 Found ${webhooks.length} active webhook(s) for column ${kanbanColumn.id}`);
+
+        // Add each webhook to the queue
+        const timestamp = new Date().toISOString();
+        for (const webhook of webhooks) {
+          try {
+            await addWebhookToQueue({
+              webhookId: webhook.id,
+              webhookUrl: webhook.endpoint_url,
+              leadId: lead.id,
+              columnId: lead.kanban_column.id,
+              columnName: lead.kanban_column.name,
+              leadData: lead.form_data as Record<string, any>,
+              timestamp,
+            });
+
+            console.log(`✅ Webhook ${webhook.id} queued for new lead ${lead.id}`);
+          } catch (error) {
+            console.error(`❌ Failed to queue webhook ${webhook.id}:`, error);
+            // Continue with other webhooks even if one fails to queue
+          }
+        }
+      } else {
+        console.log(`ℹ️ No active webhooks configured for column ${kanbanColumn.id}`);
+      }
+
       return reply.status(201).send({
         success: true,
         data: {
@@ -448,6 +487,13 @@ Instruções:
       const { id } = request.params;
       const data = request.body;
 
+      // Get current lead data before update
+      const currentLead = await prisma.lead.findUnique({
+        where: { id },
+        select: { kanban_column_id: true },
+      });
+
+      // Update lead
       const lead = await prisma.lead.update({
         where: { id },
         data,
@@ -456,6 +502,50 @@ Instruções:
           kanban_column: true,
         },
       });
+
+      // Check if column was changed
+      const columnChanged = data.kanban_column_id &&
+                           currentLead?.kanban_column_id !== data.kanban_column_id;
+
+      // If column changed, trigger webhooks
+      if (columnChanged && data.kanban_column_id) {
+        console.log(`📍 Lead ${id} moved to column ${data.kanban_column_id} - checking for webhooks...`);
+
+        // Get active webhooks for the new column
+        const webhooks = await prisma.columnWebhook.findMany({
+          where: {
+            kanban_column_id: data.kanban_column_id,
+            is_active: true,
+          },
+        });
+
+        if (webhooks.length > 0) {
+          console.log(`🔗 Found ${webhooks.length} active webhook(s) for column ${data.kanban_column_id}`);
+
+          // Add each webhook to the queue
+          const timestamp = new Date().toISOString();
+          for (const webhook of webhooks) {
+            try {
+              await addWebhookToQueue({
+                webhookId: webhook.id,
+                webhookUrl: webhook.endpoint_url,
+                leadId: lead.id,
+                columnId: lead.kanban_column.id,
+                columnName: lead.kanban_column.name,
+                leadData: lead.form_data as Record<string, any>,
+                timestamp,
+              });
+
+              console.log(`✅ Webhook ${webhook.id} queued for lead ${lead.id}`);
+            } catch (error) {
+              console.error(`❌ Failed to queue webhook ${webhook.id}:`, error);
+              // Continue with other webhooks even if one fails to queue
+            }
+          }
+        } else {
+          console.log(`ℹ️ No active webhooks configured for column ${data.kanban_column_id}`);
+        }
+      }
 
       return reply.send({
         success: true,

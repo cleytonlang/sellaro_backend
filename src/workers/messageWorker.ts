@@ -3,6 +3,7 @@ import { messageQueue, MessageJobData, MessageJobResult } from '../queues/messag
 import { openaiService } from '../services/openaiService';
 import { threadLockService } from '../services/threadLockService';
 import { emailService } from '../services/emailService';
+import { addWebhookToQueue } from '../queues/webhookQueue';
 import prisma from '../utils/prisma';
 
 // Process message job
@@ -143,12 +144,25 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
               const kanbanColumnId = config.kanbanColumnId;
 
               try {
-                await prisma.lead.update({
+                // Get current lead data before update
+                const currentLead = await prisma.lead.findUnique({
+                  where: { id: leadId },
+                  select: {
+                    kanban_column_id: true,
+                    form_data: true,
+                  },
+                });
+
+                // Update lead to new column
+                const updatedLead = await prisma.lead.update({
                   where: { id: leadId },
                   data: {
                     form_id: formId,
                     kanban_column_id: kanbanColumnId,
                     updated_at: new Date(),
+                  },
+                  include: {
+                    kanban_column: true,
                   },
                 });
 
@@ -161,14 +175,57 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                     data: {
                       formId,
                       kanbanColumnId,
-                      previousFormId: null, // Você pode pegar o valor anterior se necessário
-                      previousKanbanColumnId: null,
+                      previousFormId: null,
+                      previousKanbanColumnId: currentLead?.kanban_column_id || null,
                     },
                     success: true,
                   },
                 });
 
-                console.log(`[JOB ${job.id}] Lead ${leadId} updated - form_id: ${formId}, kanban_column_id: ${kanbanColumnId}`)
+                console.log(`[JOB ${job.id}] Lead ${leadId} moved to column ${kanbanColumnId} by trigger`)
+
+                // Check if column was changed
+                const columnChanged = currentLead?.kanban_column_id !== kanbanColumnId;
+
+                // If column changed, trigger webhooks for the new column
+                if (columnChanged) {
+                  console.log(`[JOB ${job.id}] 📍 Lead ${leadId} moved to column ${kanbanColumnId} by trigger - checking for webhooks...`);
+
+                  // Get active webhooks for the new column
+                  const webhooks = await prisma.columnWebhook.findMany({
+                    where: {
+                      kanban_column_id: kanbanColumnId,
+                      is_active: true,
+                    },
+                  });
+
+                  if (webhooks.length > 0) {
+                    console.log(`[JOB ${job.id}] 🔗 Found ${webhooks.length} active webhook(s) for column ${kanbanColumnId}`);
+
+                    // Add each webhook to the queue
+                    const timestamp = new Date().toISOString();
+                    for (const webhook of webhooks) {
+                      try {
+                        await addWebhookToQueue({
+                          webhookId: webhook.id,
+                          webhookUrl: webhook.endpoint_url,
+                          leadId: updatedLead.id,
+                          columnId: updatedLead.kanban_column.id,
+                          columnName: updatedLead.kanban_column.name,
+                          leadData: updatedLead.form_data as Record<string, any>,
+                          timestamp,
+                        });
+
+                        console.log(`[JOB ${job.id}] ✅ Webhook ${webhook.id} queued for lead ${leadId}`);
+                      } catch (webhookError) {
+                        console.error(`[JOB ${job.id}] ❌ Failed to queue webhook ${webhook.id}:`, webhookError);
+                        // Continue with other webhooks even if one fails to queue
+                      }
+                    }
+                  } else {
+                    console.log(`[JOB ${job.id}] ℹ️ No active webhooks configured for column ${kanbanColumnId}`);
+                  }
+                }
               } catch (error) {
                 // Log failed trigger execution
                 await prisma.triggerLog.create({

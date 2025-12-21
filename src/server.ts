@@ -4,8 +4,9 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import 'dotenv/config';
 
-// Initialize message worker (Bull queue processor)
+// Initialize workers (Bull queue processors)
 import './workers/messageWorker';
+import './workers/webhookWorker';
 
 // Routes
 import betterAuthRoutes from './routes/better-auth';
