@@ -232,10 +232,25 @@ model KanbanColumn {
 
   form        Form     @relation(fields: [form_id], references: [id], onDelete: Cascade)
   leads       Lead[]
+  webhooks    ColumnWebhook[]
 
   @@index([form_id])
   @@index([order])
   @@map("kanban_column")
+}
+
+model ColumnWebhook {
+  id                String   @id @default(cuid())
+  kanban_column_id  String
+  endpoint_url      String
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  kanban_column     KanbanColumn @relation(fields: [kanban_column_id], references: [id], onDelete: Cascade)
+
+  @@index([kanban_column_id])
+  @@map("column_webhook")
 }
 
 model LeadComment {
