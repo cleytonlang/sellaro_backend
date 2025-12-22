@@ -283,12 +283,12 @@ Instruções:
 
   async getAll(
     request: FastifyRequest<{
-      Querystring: { form_id: string; kanban_column_id?: string; search?: string; page?: string };
+      Querystring: { form_id: string; kanban_column_id?: string; search?: string; page?: string; date_from?: string; date_to?: string };
     }>,
     reply: FastifyReply
   ) {
     try {
-      const { form_id, kanban_column_id, search, page = '1' } = request.query;
+      const { form_id, kanban_column_id, search, page = '1', date_from, date_to } = request.query;
 
       // form_id is required
       if (!form_id) {
@@ -308,6 +308,17 @@ Instruções:
       };
       if (kanban_column_id) where.kanban_column_id = kanban_column_id;
 
+      // Add date range filter if provided
+      if (date_from || date_to) {
+        where.created_at = {};
+        if (date_from) {
+          where.created_at.gte = new Date(date_from);
+        }
+        if (date_to) {
+          where.created_at.lte = new Date(date_to);
+        }
+      }
+
       // If search is provided, use raw SQL for JSONB text search
       let leads: any[] = [];
       let total: number = 0;
@@ -323,6 +334,18 @@ Instruções:
         if (kanban_column_id) {
           conditions.push(`kanban_column_id = $${paramIndex}`);
           params.push(kanban_column_id);
+          paramIndex++;
+        }
+
+        // Add date range filter if provided
+        if (date_from) {
+          conditions.push(`created_at >= $${paramIndex}`);
+          params.push(new Date(date_from));
+          paramIndex++;
+        }
+        if (date_to) {
+          conditions.push(`created_at <= $${paramIndex}`);
+          params.push(new Date(date_to));
           paramIndex++;
         }
 
