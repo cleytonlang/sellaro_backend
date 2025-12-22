@@ -338,12 +338,12 @@ Instruções:
         }
 
         // Add date range filter if provided
-        if (date_from) {
+        if (date_from !== date_to) {
           conditions.push(`created_at >= $${paramIndex}`);
           params.push(new Date(date_from));
           paramIndex++;
         }
-        if (date_to) {
+        if (date_to !== date_from) {
           conditions.push(`created_at <= $${paramIndex}`);
           params.push(new Date(date_to));
           paramIndex++;
