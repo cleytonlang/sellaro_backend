@@ -283,29 +283,26 @@ Instruções:
 
   async getAll(
     request: FastifyRequest<{
-      Querystring: { form_id: string; kanban_column_id?: string; search?: string; page?: string; date_from?: string; date_to?: string };
+      Querystring: { form_id?: string; kanban_column_id?: string; search?: string; page?: string; date_from?: string; date_to?: string; limit?: string };
     }>,
     reply: FastifyReply
   ) {
     try {
-      const { form_id, kanban_column_id, search, page = '1', date_from, date_to } = request.query;
-
-      // form_id is required
-      if (!form_id) {
-        return reply.status(400).send({
-          success: false,
-          error: 'form_id is required',
-        });
-      }
+      const { form_id, kanban_column_id, search, page = '1', date_from, date_to, limit } = request.query;
 
       const pageNumber = Math.max(1, parseInt(page) || 1);
-      const pageSize = 10;
+      const pageSize = limit ? parseInt(limit) : 10;
       const skip = (pageNumber - 1) * pageSize;
 
       let where: any = {
         deleted_at: null, // Only get non-deleted leads
-        form_id,
       };
+
+      // Only filter by form_id if it's provided and not empty
+      if (form_id && form_id.trim() !== '') {
+        where.form_id = form_id;
+      }
+
       if (kanban_column_id) where.kanban_column_id = kanban_column_id;
 
       // Add date range filter if provided
@@ -327,9 +324,16 @@ Instruções:
         const searchTerm = search.trim();
 
         // Build the SQL conditions
-        const conditions = ['deleted_at IS NULL', 'form_id = $1'];
-        const params: any[] = [form_id];
-        let paramIndex = 2;
+        const conditions = ['deleted_at IS NULL'];
+        const params: any[] = [];
+        let paramIndex = 1;
+
+        // Only filter by form_id if it's provided and not empty
+        if (form_id && form_id.trim() !== '') {
+          conditions.push(`form_id = $${paramIndex}`);
+          params.push(form_id);
+          paramIndex++;
+        }
 
         if (kanban_column_id) {
           conditions.push(`kanban_column_id = $${paramIndex}`);
