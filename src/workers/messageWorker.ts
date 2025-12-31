@@ -151,6 +151,17 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                     kanban_column_id: true,
                     form_data: true,
                   },
+                  include: {
+                    kanban_column: true,
+                  },
+                });
+
+                // Get the new column info
+                const newColumn = await prisma.kanbanColumn.findUnique({
+                  where: { id: kanbanColumnId },
+                  select: {
+                    name: true,
+                  },
                 });
 
                 // Update lead to new column
@@ -165,6 +176,21 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                     kanban_column: true,
                   },
                 });
+
+                // Create movement log
+                if (currentLead?.kanban_column_id !== kanbanColumnId) {
+                  await prisma.leadMovementLog.create({
+                    data: {
+                      lead_id: leadId,
+                      from_column_id: currentLead?.kanban_column_id || null,
+                      to_column_id: kanbanColumnId,
+                      from_column_name: currentLead?.kanban_column?.name || null,
+                      to_column_name: newColumn?.name || 'Unknown',
+                      movement_type: 'TRIGGER',
+                      trigger_id: event.id,
+                    },
+                  });
+                }
 
                 // Log successful trigger execution
                 await prisma.triggerLog.create({

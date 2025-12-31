@@ -61,6 +61,18 @@ export class LeadController {
         },
       });
 
+      // Create initial movement log
+      await prisma.leadMovementLog.create({
+        data: {
+          lead_id: lead.id,
+          from_column_id: null,
+          to_column_id: kanbanColumn.id,
+          from_column_name: null,
+          to_column_name: kanbanColumn.name,
+          movement_type: 'INITIAL',
+        },
+      });
+
       // Create lead event
       await prisma.leadEvent.create({
         data: {
@@ -517,7 +529,9 @@ Instruções:
       // Get current lead data before update
       const currentLead = await prisma.lead.findUnique({
         where: { id },
-        select: { kanban_column_id: true },
+        include: {
+          kanban_column: true,
+        },
       });
 
       // Update lead
@@ -534,8 +548,21 @@ Instruções:
       const columnChanged = data.kanban_column_id &&
                            currentLead?.kanban_column_id !== data.kanban_column_id;
 
-      // If column changed, trigger webhooks
-      if (columnChanged && data.kanban_column_id) {
+      // If column changed, create movement log and trigger webhooks
+      if (columnChanged && data.kanban_column_id && currentLead) {
+        // Create movement log
+        await prisma.leadMovementLog.create({
+          data: {
+            lead_id: lead.id,
+            from_column_id: currentLead.kanban_column_id,
+            to_column_id: data.kanban_column_id,
+            from_column_name: currentLead.kanban_column.name,
+            to_column_name: lead.kanban_column.name,
+            movement_type: 'MANUAL',
+            user_id: request.user?.id || null,
+          },
+        });
+
         console.log(`📍 Lead ${id} moved to column ${data.kanban_column_id} - checking for webhooks...`);
 
         // Get active webhooks for the new column
@@ -611,6 +638,65 @@ Instruções:
       return reply.status(500).send({
         success: false,
         error: 'Failed to delete lead',
+      });
+    }
+  }
+
+  async getMovementLogs(
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) {
+    try {
+      const { id } = request.params;
+
+      // Get all movement logs for this lead
+      const logs = await prisma.leadMovementLog.findMany({
+        where: { lead_id: id },
+        orderBy: { created_at: 'asc' },
+      });
+
+      // Calculate time spent in each column
+      const logsWithDuration = logs.map((log, index) => {
+        const nextLog = logs[index + 1];
+        let duration = null;
+
+        if (nextLog) {
+          const diff = nextLog.created_at.getTime() - log.created_at.getTime();
+          duration = {
+            milliseconds: diff,
+            seconds: Math.floor(diff / 1000),
+            minutes: Math.floor(diff / 1000 / 60),
+            hours: Math.floor(diff / 1000 / 60 / 60),
+            days: Math.floor(diff / 1000 / 60 / 60 / 24),
+          };
+        } else {
+          // For the current column, calculate time from movement to now
+          const diff = new Date().getTime() - log.created_at.getTime();
+          duration = {
+            milliseconds: diff,
+            seconds: Math.floor(diff / 1000),
+            minutes: Math.floor(diff / 1000 / 60),
+            hours: Math.floor(diff / 1000 / 60 / 60),
+            days: Math.floor(diff / 1000 / 60 / 60 / 24),
+            current: true,
+          };
+        }
+
+        return {
+          ...log,
+          duration,
+        };
+      });
+
+      return reply.send({
+        success: true,
+        data: logsWithDuration,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch movement logs',
       });
     }
   }

@@ -11,6 +11,7 @@ export default async function leadRoutes(fastify: FastifyInstance) {
   // Demais rotas requerem autenticação
   fastify.get('/', { preHandler: authMiddleware }, leadController.getAll.bind(leadController) as any);
   fastify.get('/:id', { preHandler: authMiddleware }, leadController.getById.bind(leadController) as any);
+  fastify.get('/:id/movement-logs', { preHandler: authMiddleware }, leadController.getMovementLogs.bind(leadController) as any);
   fastify.put('/:id', { preHandler: authMiddleware }, leadController.update.bind(leadController) as any);
   fastify.delete('/:id', { preHandler: authMiddleware }, leadController.delete.bind(leadController) as any);
 }

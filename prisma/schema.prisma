@@ -167,6 +167,7 @@ model Lead {
   conversations     Conversation[]
   events            LeadEvent[]
   comments          LeadComment[]
+  movement_logs     LeadMovementLog[]
 
   @@index([form_id])
   @@index([kanban_column_id])
@@ -319,4 +320,26 @@ model TriggerLog {
   @@index([type])
   @@index([created_at])
   @@map("trigger_log")
+}
+
+model LeadMovementLog {
+  id                    String   @id @default(cuid())
+  lead_id               String
+  from_column_id        String?
+  to_column_id          String
+  from_column_name      String?
+  to_column_name        String
+  movement_type         String   // MANUAL, TRIGGER, INITIAL
+  trigger_id            String?  // If moved by trigger
+  user_id               String?  // If moved manually
+  created_at            DateTime @default(now())
+
+  lead                  Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([from_column_id])
+  @@index([to_column_id])
+  @@index([movement_type])
+  @@index([created_at])
+  @@map("lead_movement_log")
 }
