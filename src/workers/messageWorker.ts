@@ -150,9 +150,11 @@ messageQueue.process(async (job: Job<MessageJobData>): Promise<MessageJobResult>
                   select: {
                     kanban_column_id: true,
                     form_data: true,
-                  },
-                  include: {
-                    kanban_column: true,
+                    kanban_column: {
+                      select: {
+                        name: true,
+                      },
+                    },
                   },
                 });
 
