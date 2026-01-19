@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class LeadCommentController {
   /**
@@ -9,26 +10,50 @@ export class LeadCommentController {
     request: FastifyRequest<{
       Body: {
         lead_id: string;
-        user_id: string;
         content: string;
       };
     }>,
     reply: FastifyReply
   ) {
     try {
-      const { lead_id, user_id, content } = request.body;
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      const { lead_id, content } = request.body;
 
-      if (!lead_id || !user_id || !content || !content.trim()) {
+      if (!lead_id || !content || !content.trim()) {
         return reply.status(400).send({
           success: false,
-          error: 'lead_id, user_id, and content are required',
+          error: 'lead_id and content are required',
+        });
+      }
+
+      // Verificar se o lead pertence ao owner
+      const lead = await prisma.lead.findUnique({
+        where: { id: lead_id },
+        include: { form: true },
+      });
+
+      if (!lead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
         });
       }
 
       const comment = await prisma.leadComment.create({
         data: {
           lead_id,
-          user_id,
+          user_id: userId, // Usa o userId autenticado
           content: content.trim(),
         },
         include: {
@@ -67,8 +92,33 @@ export class LeadCommentController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { lead_id } = request.params;
       const { page = '1' } = request.query;
+
+      // Verificar se o lead pertence ao owner
+      const lead = await prisma.lead.findUnique({
+        where: { id: lead_id },
+        include: { form: true },
+      });
+
+      if (!lead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
 
       const pageNumber = Math.max(1, parseInt(page) || 1);
       const pageSize = 50;
@@ -130,6 +180,10 @@ export class LeadCommentController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const { content } = request.body;
 
@@ -137,6 +191,41 @@ export class LeadCommentController {
         return reply.status(400).send({
           success: false,
           error: 'content is required',
+        });
+      }
+
+      // Verificar se o comentário existe e pertence ao owner
+      const existingComment = await prisma.leadComment.findUnique({
+        where: { id },
+        include: {
+          lead: {
+            include: {
+              form: true,
+            },
+          },
+        },
+      });
+
+      if (!existingComment) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Comment not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do lead/form
+      if (existingComment.lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this comment',
+        });
+      }
+
+      // Permitir apenas que o autor do comentário ou o owner edite
+      if (existingComment.user_id !== userId && existingComment.lead.form.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: Only the comment author or owner can edit this comment',
         });
       }
 
@@ -176,7 +265,46 @@ export class LeadCommentController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
+
+      // Verificar se o comentário existe e pertence ao owner
+      const existingComment = await prisma.leadComment.findUnique({
+        where: { id },
+        include: {
+          lead: {
+            include: {
+              form: true,
+            },
+          },
+        },
+      });
+
+      if (!existingComment) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Comment not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do lead/form
+      if (existingComment.lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this comment',
+        });
+      }
+
+      // Permitir apenas que o autor do comentário ou o owner delete
+      if (existingComment.user_id !== userId && existingComment.lead.form.userId !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: Only the comment author or owner can delete this comment',
+        });
+      }
 
       await prisma.leadComment.delete({
         where: { id },

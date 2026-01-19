@@ -24,6 +24,8 @@ import adminRoutes from './routes/admin';
 import triggerRoutes from './routes/trigger';
 import { settingsRoutes } from './routes/settings';
 import { analyticsRoutes } from './routes/analytics';
+import { inviteRoutes } from './routes/invite';
+import { passwordResetRoutes } from './routes/passwordReset';
 
 const server = Fastify({
   logger: {
@@ -80,6 +82,8 @@ server.register(triggerRoutes, { prefix: '/api' });
 server.register(adminRoutes, { prefix: '/api' });
 server.register(settingsRoutes);
 server.register(analyticsRoutes, { prefix: '/api' });
+server.register(inviteRoutes);
+server.register(passwordResetRoutes);
 
 // Error handler
 server.setErrorHandler((error, _request, reply) => {

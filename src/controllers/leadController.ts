@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 import { openaiService } from '../services/openaiService';
 import { addWebhookToQueue } from '../queues/webhookQueue';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 interface FormField {
   id: string;
@@ -300,6 +301,11 @@ Instruções:
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver leads de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
+
       const { form_id, kanban_column_id, search, page = '1', date_from, date_to, limit } = request.query;
 
       const pageNumber = Math.max(1, parseInt(page) || 1);
@@ -308,6 +314,10 @@ Instruções:
 
       let where: any = {
         deleted_at: null, // Only get non-deleted leads
+        // Filtrar por leads de formulários que pertencem ao owner
+        form: {
+          userId: effectiveOwnerId,
+        },
       };
 
       // Only filter by form_id if it's provided and not empty
@@ -336,52 +346,57 @@ Instruções:
         const searchTerm = search.trim();
 
         // Build the SQL conditions
-        const conditions = ['deleted_at IS NULL'];
+        const conditions = ['l.deleted_at IS NULL'];
         const params: any[] = [];
         let paramIndex = 1;
 
+        // SEGURANÇA: Filtrar por leads de forms que pertencem ao owner
+        conditions.push(`f."userId" = $${paramIndex}`);
+        params.push(effectiveOwnerId);
+        paramIndex++;
+
         // Only filter by form_id if it's provided and not empty
         if (form_id && form_id.trim() !== '') {
-          conditions.push(`form_id = $${paramIndex}`);
+          conditions.push(`l.form_id = $${paramIndex}`);
           params.push(form_id);
           paramIndex++;
         }
 
         if (kanban_column_id) {
-          conditions.push(`kanban_column_id = $${paramIndex}`);
+          conditions.push(`l.kanban_column_id = $${paramIndex}`);
           params.push(kanban_column_id);
           paramIndex++;
         }
 
         // Add date range filter if provided
         if (date_from) {
-          conditions.push(`created_at >= $${paramIndex}`);
+          conditions.push(`l.created_at >= $${paramIndex}`);
           params.push(new Date(date_from));
           paramIndex++;
         }
         if (date_to) {
-          conditions.push(`created_at <= $${paramIndex}`);
+          conditions.push(`l.created_at <= $${paramIndex}`);
           params.push(new Date(date_to));
           paramIndex++;
         }
 
         // Add JSONB search condition - convert JSONB to text and search
-        conditions.push(`form_data::text ILIKE $${paramIndex}`);
+        conditions.push(`l.form_data::text ILIKE $${paramIndex}`);
         params.push(`%${searchTerm}%`);
         paramIndex++;
 
         const whereClause = conditions.join(' AND ');
 
-        // Get total count
+        // Get total count (com JOIN para filtrar por owner)
         const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
-          `SELECT COUNT(*)::int as count FROM "lead" WHERE ${whereClause}`,
+          `SELECT COUNT(*)::int as count FROM "lead" l INNER JOIN "form" f ON l.form_id = f.id WHERE ${whereClause}`,
           ...params
         );
         total = Number(countResult[0].count);
 
-        // Get leads with pagination
+        // Get leads with pagination (com JOIN para filtrar por owner)
         const leadsResult = await prisma.$queryRawUnsafe<any[]>(
-          `SELECT id FROM "lead" WHERE ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+          `SELECT l.id FROM "lead" l INNER JOIN "form" f ON l.form_id = f.id WHERE ${whereClause} ORDER BY l.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
           ...params,
           pageSize,
           skip
@@ -458,6 +473,10 @@ Instruções:
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const lead = await prisma.lead.findUnique({
@@ -499,6 +518,14 @@ Instruções:
         });
       }
 
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
       return reply.send({
         success: true,
         data: lead,
@@ -523,6 +550,10 @@ Instruções:
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const data = request.body;
 
@@ -531,8 +562,24 @@ Instruções:
         where: { id },
         include: {
           kanban_column: true,
+          form: true,
         },
       });
+
+      if (!currentLead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (currentLead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
 
       // Update lead
       const lead = await prisma.lead.update({
@@ -619,7 +666,32 @@ Instruções:
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
+
+      // Get lead to verify ownership
+      const lead = await prisma.lead.findUnique({
+        where: { id },
+        include: { form: true },
+      });
+
+      if (!lead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
 
       // Soft delete: set deleted_at timestamp
       await prisma.lead.update({
@@ -647,7 +719,32 @@ Instruções:
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
+
+      // Get lead to verify ownership
+      const lead = await prisma.lead.findUnique({
+        where: { id },
+        include: { form: true },
+      });
+
+      if (!lead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
 
       // Get all movement logs for this lead
       const logs = await prisma.leadMovementLog.findMany({

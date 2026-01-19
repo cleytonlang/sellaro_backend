@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 // Generate unique identifier: #<id><random10>#
 function generateIdentifier(id: string): string {
@@ -35,15 +36,24 @@ export async function getTriggers(
   reply: FastifyReply
 ) {
   try {
+    // SEGURANÇA: userId vem do token autenticado
+    const userId = request.user!.id;
+    // Obtém o owner_id efetivo para verificar acesso
+    const effectiveOwnerId = await getEffectiveOwnerId(userId);
     const { assistantId } = request.params;
 
-    // Verify assistant exists and belongs to user
+    // Verify assistant exists and belongs to owner
     const assistant = await prisma.assistant.findUnique({
       where: { id: assistantId },
     });
 
     if (!assistant) {
       return reply.status(404).send({ error: 'Assistant not found' });
+    }
+
+    // SEGURANÇA: Verifica ownership do assistant
+    if (assistant.userId !== effectiveOwnerId) {
+      return reply.status(403).send({ error: 'Forbidden: You do not have access to this assistant' });
     }
 
     const triggers = await prisma.trigger.findMany({
@@ -64,6 +74,10 @@ export async function createTrigger(
   reply: FastifyReply
 ) {
   try {
+    // SEGURANÇA: userId vem do token autenticado
+    const userId = request.user!.id;
+    // Obtém o owner_id efetivo para verificar acesso
+    const effectiveOwnerId = await getEffectiveOwnerId(userId);
     const { assistantId } = request.params;
     const { type, config, order } = request.body;
 
@@ -74,6 +88,11 @@ export async function createTrigger(
 
     if (!assistant) {
       return reply.status(404).send({ error: 'Assistant not found' });
+    }
+
+    // SEGURANÇA: Verifica ownership do assistant
+    if (assistant.userId !== effectiveOwnerId) {
+      return reply.status(403).send({ error: 'Forbidden: You do not have access to this assistant' });
     }
 
     // Validate config based on type
@@ -134,16 +153,26 @@ export async function updateTrigger(
   reply: FastifyReply
 ) {
   try {
+    // SEGURANÇA: userId vem do token autenticado
+    const userId = request.user!.id;
+    // Obtém o owner_id efetivo para verificar acesso
+    const effectiveOwnerId = await getEffectiveOwnerId(userId);
     const { id } = request.params;
     const { type, config, is_active, order } = request.body;
 
     // Verify trigger exists
     const existingTrigger = await prisma.trigger.findUnique({
       where: { id },
+      include: { assistant: true },
     });
 
     if (!existingTrigger) {
       return reply.status(404).send({ error: 'Trigger not found' });
+    }
+
+    // SEGURANÇA: Verifica ownership do assistant
+    if (existingTrigger.assistant.userId !== effectiveOwnerId) {
+      return reply.status(403).send({ error: 'Forbidden: You do not have access to this trigger' });
     }
 
     // Validate config if provided
@@ -182,15 +211,25 @@ export async function deleteTrigger(
   reply: FastifyReply
 ) {
   try {
+    // SEGURANÇA: userId vem do token autenticado
+    const userId = request.user!.id;
+    // Obtém o owner_id efetivo para verificar acesso
+    const effectiveOwnerId = await getEffectiveOwnerId(userId);
     const { id } = request.params;
 
     // Verify trigger exists
     const existingTrigger = await prisma.trigger.findUnique({
       where: { id },
+      include: { assistant: true },
     });
 
     if (!existingTrigger) {
       return reply.status(404).send({ error: 'Trigger not found' });
+    }
+
+    // SEGURANÇA: Verifica ownership do assistant
+    if (existingTrigger.assistant.userId !== effectiveOwnerId) {
+      return reply.status(403).send({ error: 'Forbidden: You do not have access to this trigger' });
     }
 
     await prisma.trigger.delete({
@@ -210,8 +249,26 @@ export async function reorderTriggers(
   reply: FastifyReply
 ) {
   try {
+    // SEGURANÇA: userId vem do token autenticado
+    const userId = request.user!.id;
+    // Obtém o owner_id efetivo para verificar acesso
+    const effectiveOwnerId = await getEffectiveOwnerId(userId);
     const { assistantId } = request.params;
     const { triggerIds } = request.body;
+
+    // Verify assistant exists and belongs to owner
+    const assistant = await prisma.assistant.findUnique({
+      where: { id: assistantId },
+    });
+
+    if (!assistant) {
+      return reply.status(404).send({ error: 'Assistant not found' });
+    }
+
+    // SEGURANÇA: Verifica ownership do assistant
+    if (assistant.userId !== effectiveOwnerId) {
+      return reply.status(403).send({ error: 'Forbidden: You do not have access to this assistant' });
+    }
 
     // Verify all triggers belong to the assistant
     const triggers = await prisma.trigger.findMany({

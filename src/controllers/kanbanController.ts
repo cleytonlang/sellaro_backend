@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class KanbanController {
   async create(
@@ -14,7 +15,31 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { form_id, name, order, color } = request.body;
+
+      // Verificar se o form pertence ao owner
+      const form = await prisma.form.findUnique({
+        where: { id: form_id },
+      });
+
+      if (!form) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Form not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership do form
+      if (form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this form',
+        });
+      }
 
       const kanbanColumn = await prisma.kanbanColumn.create({
         data: {
@@ -43,12 +68,29 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver colunas de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { form_id } = request.query;
 
+      // Build where clause - always filter by owner's forms
+      const where: any = {
+        form: {
+          userId: effectiveOwnerId,
+        },
+      };
+
+      // Only filter by form_id if provided
+      if (form_id) {
+        where.form_id = form_id;
+      }
+
       const kanbanColumns = await prisma.kanbanColumn.findMany({
-        where: form_id ? { form_id } : undefined,
+        where,
         include: {
           leads: {
+            where: { deleted_at: null }, // Only get non-deleted leads
             include: {
               form: true,
             },
@@ -76,12 +118,18 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const kanbanColumn = await prisma.kanbanColumn.findUnique({
         where: { id },
         include: {
+          form: true,
           leads: {
+            where: { deleted_at: null }, // Only get non-deleted leads
             include: {
               form: true,
             },
@@ -93,6 +141,14 @@ export class KanbanController {
         return reply.status(404).send({
           success: false,
           error: 'Kanban column not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (kanbanColumn.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this kanban column',
         });
       }
 
@@ -121,8 +177,33 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const data = request.body;
+
+      // Get column to verify ownership
+      const existingColumn = await prisma.kanbanColumn.findUnique({
+        where: { id },
+        include: { form: true },
+      });
+
+      if (!existingColumn) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Kanban column not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (existingColumn.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this kanban column',
+        });
+      }
 
       const kanbanColumn = await prisma.kanbanColumn.update({
         where: { id },
@@ -147,12 +228,17 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       // Check if column exists and count leads
       const column = await prisma.kanbanColumn.findUnique({
         where: { id },
         include: {
+          form: true,
           _count: {
             select: { leads: true },
           },
@@ -163,6 +249,14 @@ export class KanbanController {
         return reply.status(404).send({
           success: false,
           error: 'Kanban column not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (column.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this kanban column',
         });
       }
 
@@ -201,7 +295,36 @@ export class KanbanController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { columns } = request.body;
+
+      // Verify ownership for all columns before updating
+      const columnIds = columns.map(c => c.id);
+      const existingColumns = await prisma.kanbanColumn.findMany({
+        where: { id: { in: columnIds } },
+        include: { form: true },
+      });
+
+      // Check if all columns exist
+      if (existingColumns.length !== columnIds.length) {
+        return reply.status(404).send({
+          success: false,
+          error: 'One or more kanban columns not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership de todas as colunas
+      for (const column of existingColumns) {
+        if (column.form.userId !== effectiveOwnerId) {
+          return reply.status(403).send({
+            success: false,
+            error: 'Forbidden: You do not have access to one or more kanban columns',
+          });
+        }
+      }
 
       // Update all columns in a transaction
       await prisma.$transaction(

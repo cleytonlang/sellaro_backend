@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 import { openaiService } from '../services/openaiService';
 import { addMessageToQueue, getMessageJobStatus } from '../queues/messageQueue';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class ConversationController {
   async create(
@@ -219,9 +220,20 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver conversas de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { lead_id, assistant_id } = request.query;
 
-      const where: any = {};
+      // Filtrar conversas apenas de leads que pertencem ao owner
+      const where: any = {
+        lead: {
+          form: {
+            userId: effectiveOwnerId,
+          },
+        },
+      };
       if (lead_id) where.lead_id = lead_id;
       if (assistant_id) where.assistant_id = assistant_id;
 
@@ -251,12 +263,20 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const conversation = await prisma.conversation.findUnique({
         where: { id },
         include: {
-          lead: true,
+          lead: {
+            include: {
+              form: true,
+            },
+          },
           assistant: true,
           messages: {
             orderBy: { created_at: 'asc' },
@@ -268,6 +288,14 @@ export class ConversationController {
         return reply.status(404).send({
           success: false,
           error: 'Conversation not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do lead/form
+      if (conversation.lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this conversation',
         });
       }
 
@@ -294,6 +322,10 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const { content } = request.body;
 
@@ -307,12 +339,24 @@ export class ConversationController {
               openai_assistant_id: true,
             },
           },
+          lead: {
+            include: {
+              form: true,
+            },
+          },
         },
       });
 
       if (!conversation) {
         return reply.status(404).send({
           error: 'Conversation not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do lead/form
+      if (conversation.lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          error: 'Forbidden: You do not have access to this conversation',
         });
       }
 
@@ -419,8 +463,37 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const data = request.body;
+
+      // Get conversation to verify ownership
+      const existingConversation = await prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          lead: {
+            include: {
+              form: true,
+            },
+          },
+        },
+      });
+
+      if (!existingConversation) {
+        return reply.status(404).send({
+          error: 'Conversation not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do lead/form
+      if (existingConversation.lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          error: 'Forbidden: You do not have access to this conversation',
+        });
+      }
 
       const conversation = await prisma.conversation.update({
         where: { id },

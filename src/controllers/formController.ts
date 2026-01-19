@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class FormController {
   async create(
@@ -17,11 +18,13 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado, não do body da request
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para que membros do time criem forms no nome do owner
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { name, description, fields, settings, assistant_id } = request.body;
 
       const form = await prisma.form.create({
         data: {
-          userId,
+          userId: effectiveOwnerId, // Forms são criados no nome do owner
           name,
           description,
           fields,
@@ -60,9 +63,11 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado, não da query string
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver forms de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       const forms = await prisma.form.findMany({
-        where: { userId },
+        where: { userId: effectiveOwnerId },
         include: {
           assistant: true,
           _count: {
@@ -98,6 +103,8 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const form = await prisma.form.findUnique({
@@ -118,8 +125,8 @@ export class FormController {
         });
       }
 
-      // SEGURANÇA: Verifica se o form pertence ao usuário autenticado
-      if (form.userId !== userId) {
+      // SEGURANÇA: Verifica se o form pertence à conta/empresa do usuário
+      if (form.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this form',
@@ -190,6 +197,8 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const data = request.body;
 
@@ -206,7 +215,7 @@ export class FormController {
         });
       }
 
-      if (existingForm.userId !== userId) {
+      if (existingForm.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this form',
@@ -238,6 +247,8 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       // SEGURANÇA: Verifica ownership antes de deletar
@@ -253,7 +264,7 @@ export class FormController {
         });
       }
 
-      if (existingForm.userId !== userId) {
+      if (existingForm.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this form',
@@ -284,6 +295,8 @@ export class FormController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       // SEGURANÇA: Verifica ownership antes de retornar colunas
@@ -299,7 +312,8 @@ export class FormController {
         });
       }
 
-      if (form.userId !== userId) {
+      // SEGURANÇA: Verifica ownership usando effectiveOwnerId
+      if (form.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this form',

@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import prisma from '../utils/prisma';
 import { decryptToken } from '../utils/crypto';
 import { openaiService } from '../services/openaiService';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class AssistantController {
   async create(
@@ -25,6 +26,8 @@ export class AssistantController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para que membros do time criem assistants no nome do owner
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       const {
         name,
@@ -62,9 +65,9 @@ export class AssistantController {
         });
       }
 
-      // Fetch user's encrypted API key
+      // Fetch owner's encrypted API key (usamos o owner para API key compartilhada)
       const user = await prisma.user.findUnique({
-        where: { id: userId },
+        where: { id: effectiveOwnerId },
         select: { openai_api_key: true },
       });
 
@@ -110,7 +113,7 @@ export class AssistantController {
       // Create database record
       const assistant = await prisma.assistant.create({
         data: {
-          userId,
+          userId: effectiveOwnerId, // Assistants são criados no nome do owner
           name,
           system_prompt,
           initial_message,
@@ -145,9 +148,11 @@ export class AssistantController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver assistants de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       const assistants = await prisma.assistant.findMany({
-        where: { userId },
+        where: { userId: effectiveOwnerId },
         include: {
           _count: {
             select: {
@@ -179,6 +184,8 @@ export class AssistantController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const assistant = await prisma.assistant.findUnique({
@@ -200,7 +207,7 @@ export class AssistantController {
       }
 
       // SEGURANÇA: Verifica ownership
-      if (assistant.userId !== userId) {
+      if (assistant.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this assistant',
@@ -241,6 +248,8 @@ export class AssistantController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const updateData = request.body;
 
@@ -273,7 +282,7 @@ export class AssistantController {
       }
 
       // SEGURANÇA: Verifica ownership antes de atualizar
-      if (existingAssistant.userId !== userId) {
+      if (existingAssistant.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this assistant',
@@ -345,6 +354,8 @@ export class AssistantController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       // Get the existing assistant to access OpenAI ID and user info
@@ -361,7 +372,7 @@ export class AssistantController {
       }
 
       // SEGURANÇA: Verifica ownership antes de deletar
-      if (existingAssistant.userId !== userId) {
+      if (existingAssistant.userId !== effectiveOwnerId) {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this assistant',

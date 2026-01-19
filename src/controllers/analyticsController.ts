@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
+import { getEffectiveOwnerId } from '../utils/ownership';
 
 export class AnalyticsController {
   /**
@@ -12,16 +13,18 @@ export class AnalyticsController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver dados de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      // Get all leads created in the last 30 days for user's forms
+      // Get all leads created in the last 30 days for owner's forms
       const leads = await prisma.lead.findMany({
         where: {
           form: {
-            userId,
+            userId: effectiveOwnerId,
           },
           deleted_at: null,
           created_at: {
@@ -82,18 +85,20 @@ export class AnalyticsController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver dados de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      // Get all leads updated in the last 30 days for user's forms
+      // Get all leads updated in the last 30 days for owner's forms
       // We use raw SQL to compare updated_at with created_at
       const leads = await prisma.$queryRaw<Array<{ updated_at: Date }>>`
         SELECT l.updated_at
         FROM "lead" l
         INNER JOIN "form" f ON l.form_id = f.id
-        WHERE f."userId" = ${userId}
+        WHERE f."userId" = ${effectiveOwnerId}
           AND l.deleted_at IS NULL
           AND l.updated_at >= ${thirtyDaysAgo}
           AND l.updated_at != l.created_at
@@ -147,18 +152,20 @@ export class AnalyticsController {
     try {
       // SEGURANÇA: userId vem do token autenticado
       const userId = request.user!.id;
+      // Obtém o owner_id efetivo para ver dados de toda a conta/empresa
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
 
       // Get date 30 days ago
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      // Get all messages from conversations of user's forms in the last 30 days
+      // Get all messages from conversations of owner's forms in the last 30 days
       const messages = await prisma.message.findMany({
         where: {
           conversation: {
             lead: {
               form: {
-                userId,
+                userId: effectiveOwnerId,
               },
             },
           },

@@ -31,4 +31,10 @@ export async function settingsRoutes(app: FastifyInstance) {
     { preHandler: authMiddleware },
     (request, reply) => controller.validateApiKey(request as any, reply)
   )
+
+  // Get user permissions
+  app.get('/api/settings/permissions',
+    { preHandler: authMiddleware },
+    (request, reply) => controller.getPermissions(request as any, reply)
+  )
 }

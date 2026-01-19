@@ -1,5 +1,8 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { auth } from '../lib/auth';
+import prisma from '../utils/prisma';
+
+type PermissionType = 'users' | 'threads' | 'integrations' | 'forms' | 'assistants';
 
 // Estende o tipo FastifyRequest para incluir o user
 declare module 'fastify' {
@@ -99,4 +102,77 @@ export async function optionalAuthMiddleware(
   } catch (_error) {
     // Ignora erros em autenticação opcional
   }
+}
+
+/**
+ * Cria um middleware de verificação de permissão para um módulo específico
+ * Deve ser usado APÓS o authMiddleware
+ *
+ * @param permission - Nome da permissão a verificar (users, threads, integrations, forms, assistants)
+ * @returns Middleware que verifica se o usuário tem a permissão necessária
+ */
+export function requirePermission(permission: PermissionType) {
+  return async function permissionMiddleware(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      if (!request.user) {
+        return reply.status(401).send({
+          success: false,
+          error: 'Authentication required',
+        });
+      }
+
+      const userId = request.user.id;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          owner_id: true,
+          can_access_users: true,
+          can_access_threads: true,
+          can_access_integrations: true,
+          can_access_forms: true,
+          can_access_assistants: true,
+        },
+      });
+
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          error: 'User not found',
+        });
+      }
+
+      // Se o usuário é owner (não tem owner_id), ele tem todas as permissões
+      if (user.owner_id === null) {
+        return; // Permitir acesso
+      }
+
+      // Verificar a permissão específica
+      const permissionMap: Record<PermissionType, boolean> = {
+        users: user.can_access_users,
+        threads: user.can_access_threads,
+        integrations: user.can_access_integrations,
+        forms: user.can_access_forms,
+        assistants: user.can_access_assistants,
+      };
+
+      if (!permissionMap[permission]) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Você não tem permissão para acessar este módulo',
+        });
+      }
+
+      // Permitir acesso
+    } catch (error) {
+      console.error('Permission check error:', error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Permission verification failed',
+      });
+    }
+  };
 }

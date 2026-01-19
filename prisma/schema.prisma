@@ -20,8 +20,17 @@ model User {
   emailVerified   Boolean   @default(false)
   image           String?
   openai_api_key  String?   // encrypted
+  owner_id        String?   // Se preenchido, este usuário pertence ao owner (conta principal)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @default(now()) @updatedAt
+
+  // Permissões de módulos (apenas para usuários não-owner)
+  // Owner sempre tem acesso total a todos os módulos
+  can_access_users        Boolean   @default(false)
+  can_access_threads      Boolean   @default(false)
+  can_access_integrations Boolean   @default(false)
+  can_access_forms        Boolean   @default(false)
+  can_access_assistants   Boolean   @default(false)
 
   // Better-auth relations
   sessions        Session[]
@@ -31,8 +40,47 @@ model User {
   forms           Form[]
   assistants      Assistant[]
   lead_comments   LeadComment[]
+  sent_invites    UserInvite[] @relation("InvitedBy")
 
+  // Relação de usuários vinculados (mesma empresa/conta)
+  owner           User?     @relation("TeamMembers", fields: [owner_id], references: [id], onDelete: SetNull)
+  team_members    User[]    @relation("TeamMembers")
+
+  @@index([owner_id])
   @@map("user")
+}
+
+model UserInvite {
+  id              String    @id @default(cuid())
+  email           String
+  invited_by_id   String
+  status          String    @default("pending") // pending, accepted, expired
+  token           String    @unique @default(cuid())
+  expires_at      DateTime
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  invited_by      User      @relation("InvitedBy", fields: [invited_by_id], references: [id], onDelete: Cascade)
+
+  @@index([invited_by_id])
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("user_invite")
+}
+
+model PasswordReset {
+  id         String   @id @default(cuid())
+  email      String
+  token      String   @unique @default(cuid())
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([email])
+  @@index([token])
+  @@map("password_reset")
 }
 
 model Session {

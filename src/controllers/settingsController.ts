@@ -1,8 +1,60 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import prisma from '../utils/prisma'
 import { encryptToken, decryptToken } from '../utils/crypto'
+import { getEffectiveOwnerId } from '../utils/ownerHelper'
 
 export class SettingsController {
+  // Buscar permissões do usuário atual
+  async getPermissions(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ) {
+    try {
+      const userId = request.user!.id;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          owner_id: true,
+          can_access_users: true,
+          can_access_threads: true,
+          can_access_integrations: true,
+          can_access_forms: true,
+          can_access_assistants: true,
+        },
+      })
+
+      if (!user) {
+        return reply.status(404).send({
+          success: false,
+          error: 'User not found',
+        })
+      }
+
+      // Se o usuário é owner (não tem owner_id), ele tem todas as permissões
+      const isOwner = user.owner_id === null;
+
+      return reply.send({
+        success: true,
+        data: {
+          is_owner: isOwner,
+          can_access_users: isOwner || user.can_access_users,
+          can_access_threads: isOwner || user.can_access_threads,
+          can_access_integrations: isOwner || user.can_access_integrations,
+          can_access_forms: isOwner || user.can_access_forms,
+          can_access_assistants: isOwner || user.can_access_assistants,
+        },
+      })
+    } catch (error) {
+      request.log.error(error)
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch permissions',
+      })
+    }
+  }
+
   async getSettings(
     request: FastifyRequest,
     reply: FastifyReply
