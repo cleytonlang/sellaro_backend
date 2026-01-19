@@ -115,7 +115,7 @@ export class InviteController {
         })
       }
 
-      if (!signUpResult || signUpResult.error) {
+      if (!signUpResult) {
         return reply.status(400).send({
           success: false,
           error: 'Falha ao criar conta do usuário convidado',
@@ -176,7 +176,7 @@ export class InviteController {
 
       try {
         await emailService.sendEmail({
-          to: email,
+          to: [email],
           subject: `Você foi convidado para o Sellaro por ${invitingUser.name}`,
           html: emailHtml,
         })
@@ -394,7 +394,7 @@ export class InviteController {
 
       try {
         await emailService.sendEmail({
-          to: invite.email,
+          to: [invite.email],
           subject: `Suas credenciais do Sellaro foram atualizadas`,
           html: emailHtml,
         })

@@ -1,7 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import prisma from '../utils/prisma'
 import { encryptToken, decryptToken } from '../utils/crypto'
-import { getEffectiveOwnerId } from '../utils/ownerHelper'
 
 export class SettingsController {
   // Buscar permissões do usuário atual
