@@ -41,6 +41,7 @@ model User {
   assistants      Assistant[]
   lead_comments   LeadComment[]
   sent_invites    UserInvite[] @relation("InvitedBy")
+  assigned_leads  Lead[]    @relation("AssignedLeads")
 
   // Relação de usuários vinculados (mesma empresa/conta)
   owner           User?     @relation("TeamMembers", fields: [owner_id], references: [id], onDelete: SetNull)
@@ -195,6 +196,7 @@ model Lead {
   id                String   @id @default(cuid())
   form_id           String
   kanban_column_id  String
+  assigned_user_id  String?  // Usuário responsável pelo lead
 
   // Form submitted data
   form_data         Json
@@ -212,6 +214,7 @@ model Lead {
 
   form              Form     @relation(fields: [form_id], references: [id])
   kanban_column     KanbanColumn @relation(fields: [kanban_column_id], references: [id], onDelete: Cascade)
+  assigned_user     User?    @relation("AssignedLeads", fields: [assigned_user_id], references: [id], onDelete: SetNull)
   conversations     Conversation[]
   events            LeadEvent[]
   comments          LeadComment[]
@@ -219,6 +222,7 @@ model Lead {
 
   @@index([form_id])
   @@index([kanban_column_id])
+  @@index([assigned_user_id])
   @@index([created_at])
   @@index([deleted_at])
   @@map("lead")
@@ -303,12 +307,16 @@ model ColumnWebhook {
 }
 
 model LeadComment {
-  id          String   @id @default(cuid())
-  lead_id     String
-  user_id     String
-  content     String   @db.Text
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id                String   @id @default(cuid())
+  lead_id           String
+  user_id           String
+  content           String   @db.Text
+  attachment_url    String?  // URL do arquivo anexado
+  attachment_name   String?  // Nome original do arquivo
+  attachment_type   String?  // MIME type do arquivo
+  attachment_size   Int?     // Tamanho do arquivo em bytes
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   lead        Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
   user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)

@@ -11,6 +11,10 @@ export class LeadCommentController {
       Body: {
         lead_id: string;
         content: string;
+        attachment_url?: string;
+        attachment_name?: string;
+        attachment_type?: string;
+        attachment_size?: number;
       };
     }>,
     reply: FastifyReply
@@ -20,12 +24,13 @@ export class LeadCommentController {
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
-      const { lead_id, content } = request.body;
+      const { lead_id, content, attachment_url, attachment_name, attachment_type, attachment_size } = request.body;
 
-      if (!lead_id || !content || !content.trim()) {
+      // Content ou attachment é obrigatório
+      if (!lead_id || (!content?.trim() && !attachment_url)) {
         return reply.status(400).send({
           success: false,
-          error: 'lead_id and content are required',
+          error: 'lead_id and either content or attachment are required',
         });
       }
 
@@ -54,7 +59,11 @@ export class LeadCommentController {
         data: {
           lead_id,
           user_id: userId, // Usa o userId autenticado
-          content: content.trim(),
+          content: content?.trim() || '',
+          attachment_url: attachment_url || null,
+          attachment_name: attachment_name || null,
+          attachment_type: attachment_type || null,
+          attachment_size: attachment_size || null,
         },
         include: {
           user: {
@@ -64,6 +73,26 @@ export class LeadCommentController {
               email: true,
               image: true,
             },
+          },
+        },
+      });
+
+      // Criar log de evento para o comentário
+      await prisma.leadEvent.create({
+        data: {
+          lead_id,
+          type: attachment_url ? 'COMMENT_WITH_ATTACHMENT' : 'COMMENT_ADDED',
+          data: {
+            comment_id: comment.id,
+            content: content?.trim() || '',
+            user_id: userId,
+            user_name: comment.user.name,
+            ...(attachment_url && {
+              attachment_url,
+              attachment_name,
+              attachment_type,
+              attachment_size,
+            }),
           },
         },
       });

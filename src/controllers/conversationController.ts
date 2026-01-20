@@ -263,10 +263,6 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
-      // SEGURANÇA: userId vem do token autenticado
-      const userId = request.user!.id;
-      // Obtém o owner_id efetivo para verificar acesso
-      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
 
       const conversation = await prisma.conversation.findUnique({
@@ -291,12 +287,27 @@ export class ConversationController {
         });
       }
 
-      // SEGURANÇA: Verifica ownership através do lead/form
-      if (conversation.lead.form.userId !== effectiveOwnerId) {
-        return reply.status(403).send({
-          success: false,
-          error: 'Forbidden: You do not have access to this conversation',
-        });
+      // Se o usuário está autenticado, verifica ownership
+      if (request.user) {
+        const userId = request.user.id;
+        const effectiveOwnerId = await getEffectiveOwnerId(userId);
+
+        // SEGURANÇA: Verifica ownership através do lead/form
+        if (conversation.lead.form.userId !== effectiveOwnerId) {
+          return reply.status(403).send({
+            success: false,
+            error: 'Forbidden: You do not have access to this conversation',
+          });
+        }
+      } else {
+        // Acesso público: permite acesso se a conversação pertence a um formulário público ativo
+        // A segurança aqui é que o ID da conversação não é facilmente adivinhável
+        if (!conversation.lead.form.is_active) {
+          return reply.status(403).send({
+            success: false,
+            error: 'Forbidden: This conversation is not accessible',
+          });
+        }
       }
 
       return reply.send({
@@ -322,10 +333,6 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
-      // SEGURANÇA: userId vem do token autenticado
-      const userId = request.user!.id;
-      // Obtém o owner_id efetivo para verificar acesso
-      const effectiveOwnerId = await getEffectiveOwnerId(userId);
       const { id } = request.params;
       const { content } = request.body;
 
@@ -353,11 +360,24 @@ export class ConversationController {
         });
       }
 
-      // SEGURANÇA: Verifica ownership através do lead/form
-      if (conversation.lead.form.userId !== effectiveOwnerId) {
-        return reply.status(403).send({
-          error: 'Forbidden: You do not have access to this conversation',
-        });
+      // Se o usuário está autenticado, verifica ownership
+      if (request.user) {
+        const userId = request.user.id;
+        const effectiveOwnerId = await getEffectiveOwnerId(userId);
+
+        // SEGURANÇA: Verifica ownership através do lead/form
+        if (conversation.lead.form.userId !== effectiveOwnerId) {
+          return reply.status(403).send({
+            error: 'Forbidden: You do not have access to this conversation',
+          });
+        }
+      } else {
+        // Acesso público: permite acesso se a conversação pertence a um formulário público ativo
+        if (!conversation.lead.form.is_active) {
+          return reply.status(403).send({
+            error: 'Forbidden: This conversation is not accessible',
+          });
+        }
       }
 
       if (!conversation.thread_id) {
@@ -415,6 +435,7 @@ export class ConversationController {
     reply: FastifyReply
   ) {
     try {
+      const { id } = request.params;
       const { jobId } = request.query;
 
       if (!jobId) {
@@ -422,6 +443,41 @@ export class ConversationController {
         return reply.status(400).send({
           error: 'jobId is required',
         });
+      }
+
+      // Verificar se a conversação existe e é acessível (opcional, mas aumenta segurança)
+      if (id) {
+        const conversation = await prisma.conversation.findUnique({
+          where: { id },
+          include: {
+            lead: {
+              include: {
+                form: true,
+              },
+            },
+          },
+        });
+
+        if (conversation) {
+          // Se o usuário está autenticado, verifica ownership
+          if (request.user) {
+            const userId = request.user.id;
+            const effectiveOwnerId = await getEffectiveOwnerId(userId);
+
+            if (conversation.lead.form.userId !== effectiveOwnerId) {
+              return reply.status(403).send({
+                error: 'Forbidden: You do not have access to this conversation',
+              });
+            }
+          } else {
+            // Acesso público: permite acesso se a conversação pertence a um formulário público ativo
+            if (!conversation.lead.form.is_active) {
+              return reply.status(403).send({
+                error: 'Forbidden: This conversation is not accessible',
+              });
+            }
+          }
+        }
       }
 
       console.log(`[STATUS] 🔍 Checking status for job: ${jobId}`);

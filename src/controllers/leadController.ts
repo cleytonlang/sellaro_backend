@@ -47,11 +47,39 @@ export class LeadController {
         include: { assistant: true },
       });
 
+      // Get the owner of the form to find team members for assignment
+      let assignedUserId: string | null = null;
+      if (form?.userId) {
+        // Get the effective owner (the main account owner)
+        const formOwner = await prisma.user.findUnique({
+          where: { id: form.userId },
+          select: { id: true, owner_id: true },
+        });
+
+        const effectiveOwnerId = formOwner?.owner_id || form.userId;
+
+        // Find all team members (users with owner_id pointing to the effective owner)
+        // These are non-owner users who can receive leads
+        const teamMembers = await prisma.user.findMany({
+          where: {
+            owner_id: effectiveOwnerId,
+          },
+          select: { id: true },
+        });
+
+        // If there are team members, randomly assign one
+        if (teamMembers.length > 0) {
+          const randomIndex = Math.floor(Math.random() * teamMembers.length);
+          assignedUserId = teamMembers[randomIndex].id;
+        }
+      }
+
       const lead = await prisma.lead.create({
         data: {
           form_id,
           form_data,
           kanban_column_id: kanbanColumn.id,
+          assigned_user_id: assignedUserId,
           ip_address: request.ip,
           user_agent: request.headers['user-agent'],
           referrer_url: request.headers.referer,
@@ -59,6 +87,14 @@ export class LeadController {
         include: {
           form: true,
           kanban_column: true,
+          assigned_user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
         },
       });
 
@@ -411,6 +447,14 @@ Instruções:
             include: {
               form: true,
               kanban_column: true,
+              assigned_user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
+              },
               _count: {
                 select: {
                   conversations: true,
@@ -432,6 +476,14 @@ Instruções:
           include: {
             form: true,
             kanban_column: true,
+            assigned_user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+              },
+            },
             _count: {
               select: {
                 conversations: true,
@@ -484,6 +536,14 @@ Instruções:
         include: {
           form: true,
           kanban_column: true,
+          assigned_user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
           conversations: {
             include: {
               assistant: true,
@@ -545,6 +605,7 @@ Instruções:
       Body: {
         kanban_column_id?: string;
         form_data?: any;
+        assigned_user_id?: string | null;
       };
     }>,
     reply: FastifyReply
@@ -588,6 +649,14 @@ Instruções:
         include: {
           form: true,
           kanban_column: true,
+          assigned_user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
         },
       });
 
@@ -794,6 +863,57 @@ Instruções:
       return reply.status(500).send({
         success: false,
         error: 'Failed to fetch movement logs',
+      });
+    }
+  }
+
+  async getEvents(
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply
+  ) {
+    try {
+      // SEGURANÇA: userId vem do token autenticado
+      const userId = request.user!.id;
+      // Obtém o owner_id efetivo para verificar acesso
+      const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      const { id } = request.params;
+
+      // Get lead to verify ownership
+      const lead = await prisma.lead.findUnique({
+        where: { id },
+        include: { form: true },
+      });
+
+      if (!lead) {
+        return reply.status(404).send({
+          success: false,
+          error: 'Lead not found',
+        });
+      }
+
+      // SEGURANÇA: Verifica ownership através do form
+      if (lead.form.userId !== effectiveOwnerId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // Get all events for this lead
+      const events = await prisma.leadEvent.findMany({
+        where: { lead_id: id },
+        orderBy: { created_at: 'desc' },
+      });
+
+      return reply.send({
+        success: true,
+        data: events,
+      });
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        success: false,
+        error: 'Failed to fetch lead events',
       });
     }
   }
