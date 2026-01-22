@@ -10,21 +10,21 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
   fastify.get('/analytics/leads-created',
     { preHandler: authMiddleware },
     async (request, reply) => {
-      return analyticsController.getLeadsCreatedPerDay(request, reply);
+      return analyticsController.getLeadsCreatedPerDay(request as any, reply);
     }
   );
 
   fastify.get('/analytics/leads-updated',
     { preHandler: authMiddleware },
     async (request, reply) => {
-      return analyticsController.getLeadsUpdatedPerDay(request, reply);
+      return analyticsController.getLeadsUpdatedPerDay(request as any, reply);
     }
   );
 
   fastify.get('/analytics/messages',
     { preHandler: authMiddleware },
     async (request, reply) => {
-      return analyticsController.getMessagesPerDay(request, reply);
+      return analyticsController.getMessagesPerDay(request as any, reply);
     }
   );
 }
