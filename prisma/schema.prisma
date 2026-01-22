@@ -31,6 +31,8 @@ model User {
   can_access_integrations Boolean   @default(false)
   can_access_forms        Boolean   @default(false)
   can_access_assistants   Boolean   @default(false)
+  can_access_leads        Boolean   @default(false)
+  can_access_crm          Boolean   @default(false)
 
   // Better-auth relations
   sessions        Session[]
@@ -297,6 +299,21 @@ model ColumnWebhook {
   kanban_column_id  String
   endpoint_url      String
   is_active         Boolean  @default(true)
+
+  // Tipo de autenticação: 'none', 'header_token', 'basic_auth', 'bearer_token'
+  auth_type         String   @default("none")
+
+  // Para Header Token (ex: X-Webhook-Token: sk_live_abc123)
+  header_name       String?  // Nome do header (ex: X-Webhook-Token)
+  header_value      String?  // Valor do token
+
+  // Para Basic Auth (Authorization: Basic base64(user:password))
+  basic_auth_user   String?  // Usuário
+  basic_auth_pass   String?  // Senha
+
+  // Para Bearer Token (Authorization: Bearer <token>)
+  bearer_token      String?  // Token Bearer
+
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
 

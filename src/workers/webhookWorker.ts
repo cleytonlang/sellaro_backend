@@ -22,11 +22,19 @@ webhookQueue.process(async (job: Job<WebhookJobData>): Promise<WebhookJobResult>
   console.log(`${'='.repeat(80)}\n`);
 
   try {
-    // Verify webhook is still active
-    console.log(`[WEBHOOK ${job.id}] Verifying webhook is active...`);
+    // Verify webhook is still active and get auth config
+    console.log(`[WEBHOOK ${job.id}] Verifying webhook and fetching auth config...`);
     const webhook = await prisma.columnWebhook.findUnique({
       where: { id: webhookId },
-      select: { is_active: true },
+      select: {
+        is_active: true,
+        auth_type: true,
+        header_name: true,
+        header_value: true,
+        basic_auth_user: true,
+        basic_auth_pass: true,
+        bearer_token: true,
+      },
     });
 
     if (!webhook) {
@@ -59,6 +67,29 @@ webhookQueue.process(async (job: Job<WebhookJobData>): Promise<WebhookJobResult>
       },
     };
 
+    // Build headers with authentication
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Sellaro-Webhook/1.0',
+      'X-Webhook-ID': webhookId,
+      'X-Lead-ID': leadId,
+    };
+
+    // Add authentication headers based on auth_type
+    if (webhook.auth_type === 'header_token' && webhook.header_name && webhook.header_value) {
+      headers[webhook.header_name] = webhook.header_value;
+      console.log(`[WEBHOOK ${job.id}] 🔐 Using Header Token authentication (${webhook.header_name})`);
+    } else if (webhook.auth_type === 'basic_auth' && webhook.basic_auth_user && webhook.basic_auth_pass) {
+      const credentials = Buffer.from(`${webhook.basic_auth_user}:${webhook.basic_auth_pass}`).toString('base64');
+      headers['Authorization'] = `Basic ${credentials}`;
+      console.log(`[WEBHOOK ${job.id}] 🔐 Using Basic Auth authentication`);
+    } else if (webhook.auth_type === 'bearer_token' && webhook.bearer_token) {
+      headers['Authorization'] = `Bearer ${webhook.bearer_token}`;
+      console.log(`[WEBHOOK ${job.id}] 🔐 Using Bearer Token authentication`);
+    } else {
+      console.log(`[WEBHOOK ${job.id}] 🔓 No authentication configured`);
+    }
+
     console.log(`[WEBHOOK ${job.id}] Sending POST request to ${webhookUrl}...`);
     console.log(`[WEBHOOK ${job.id}] Payload:`, JSON.stringify(payload, null, 2));
 
@@ -71,12 +102,7 @@ webhookQueue.process(async (job: Job<WebhookJobData>): Promise<WebhookJobResult>
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Sellaro-Webhook/1.0',
-        'X-Webhook-ID': webhookId,
-        'X-Lead-ID': leadId,
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
     });

@@ -21,6 +21,8 @@ export class SettingsController {
           can_access_integrations: true,
           can_access_forms: true,
           can_access_assistants: true,
+          can_access_leads: true,
+          can_access_crm: true,
         },
       })
 
@@ -43,6 +45,8 @@ export class SettingsController {
           can_access_integrations: isOwner || user.can_access_integrations,
           can_access_forms: isOwner || user.can_access_forms,
           can_access_assistants: isOwner || user.can_access_assistants,
+          can_access_leads: isOwner || user.can_access_leads,
+          can_access_crm: isOwner || user.can_access_crm,
         },
       })
     } catch (error) {

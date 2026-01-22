@@ -53,6 +53,8 @@ export class UserController {
           can_access_integrations: true,
           can_access_forms: true,
           can_access_assistants: true,
+          can_access_leads: true,
+          can_access_crm: true,
           createdAt: true,
         },
         orderBy: {
@@ -89,6 +91,8 @@ export class UserController {
         can_access_integrations?: boolean;
         can_access_forms?: boolean;
         can_access_assistants?: boolean;
+        can_access_leads?: boolean;
+        can_access_crm?: boolean;
       };
     }>,
     reply: FastifyReply
@@ -153,6 +157,8 @@ export class UserController {
           can_access_integrations: permissions.can_access_integrations,
           can_access_forms: permissions.can_access_forms,
           can_access_assistants: permissions.can_access_assistants,
+          can_access_leads: permissions.can_access_leads,
+          can_access_crm: permissions.can_access_crm,
         },
         select: {
           id: true,
@@ -163,6 +169,8 @@ export class UserController {
           can_access_integrations: true,
           can_access_forms: true,
           can_access_assistants: true,
+          can_access_leads: true,
+          can_access_crm: true,
         },
       });
 
