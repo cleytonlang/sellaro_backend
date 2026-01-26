@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
 import { openaiService } from '../services/openaiService';
 import { addWebhookToQueue } from '../queues/webhookQueue';
-import { getEffectiveOwnerId } from '../utils/ownership';
+import { getEffectiveOwnerId, isOwner } from '../utils/ownership';
 
 interface FormField {
   id: string;
@@ -341,6 +341,13 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para ver leads de toda a conta/empresa
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
+
+      // DEBUG LOG
+      console.log('🔍 [LEADS DEBUG] userId:', userId);
+      console.log('🔍 [LEADS DEBUG] effectiveOwnerId:', effectiveOwnerId);
+      console.log('🔍 [LEADS DEBUG] userIsOwner:', userIsOwner);
 
       const { form_id, kanban_column_id, search, page = '1', date_from, date_to, limit } = request.query;
 
@@ -355,6 +362,16 @@ Instruções:
           userId: effectiveOwnerId,
         },
       };
+
+      // REGRA DE NEGÓCIO: Membros do time veem apenas leads atribuídos a eles
+      if (!userIsOwner) {
+        where.assigned_user_id = userId;
+        console.log('🔍 [LEADS DEBUG] Filtro aplicado: assigned_user_id =', userId);
+      } else {
+        console.log('🔍 [LEADS DEBUG] Usuário é OWNER - vendo todos os leads');
+      }
+
+      console.log('🔍 [LEADS DEBUG] Where filter:', JSON.stringify(where, null, 2));
 
       // Only filter by form_id if it's provided and not empty
       if (form_id && form_id.trim() !== '') {
@@ -390,6 +407,13 @@ Instruções:
         conditions.push(`f."userId" = $${paramIndex}`);
         params.push(effectiveOwnerId);
         paramIndex++;
+
+        // REGRA DE NEGÓCIO: Membros do time veem apenas leads atribuídos a eles
+        if (!userIsOwner) {
+          conditions.push(`l.assigned_user_id = $${paramIndex}`);
+          params.push(userId);
+          paramIndex++;
+        }
 
         // Only filter by form_id if it's provided and not empty
         if (form_id && form_id.trim() !== '') {
@@ -529,6 +553,8 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
 
       const lead = await prisma.lead.findUnique({
@@ -586,6 +612,14 @@ Instruções:
         });
       }
 
+      // REGRA DE NEGÓCIO: Membros do time só podem ver leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
+        });
+      }
+
       return reply.send({
         success: true,
         data: lead,
@@ -615,6 +649,8 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
       const data = request.body;
 
@@ -639,6 +675,14 @@ Instruções:
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem editar leads atribuídos a eles
+      if (!userIsOwner && currentLead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -739,6 +783,8 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
 
       // Get lead to verify ownership
@@ -759,6 +805,14 @@ Instruções:
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem deletar leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -792,6 +846,8 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
 
       // Get lead to verify ownership
@@ -812,6 +868,14 @@ Instruções:
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem ver logs de leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -876,6 +940,8 @@ Instruções:
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
 
       // Get lead to verify ownership
@@ -896,6 +962,14 @@ Instruções:
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem ver eventos de leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 

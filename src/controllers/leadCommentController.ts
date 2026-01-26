@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../utils/prisma';
-import { getEffectiveOwnerId } from '../utils/ownership';
+import { getEffectiveOwnerId, isOwner } from '../utils/ownership';
 
 export class LeadCommentController {
   /**
@@ -24,6 +24,8 @@ export class LeadCommentController {
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { lead_id, content, attachment_url, attachment_name, attachment_type, attachment_size } = request.body;
 
       // Content ou attachment é obrigatório
@@ -52,6 +54,14 @@ export class LeadCommentController {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem comentar em leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -125,6 +135,8 @@ export class LeadCommentController {
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { lead_id } = request.params;
       const { page = '1' } = request.query;
 
@@ -146,6 +158,14 @@ export class LeadCommentController {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this lead',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem ver comentários de leads atribuídos a eles
+      if (!userIsOwner && lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -213,6 +233,8 @@ export class LeadCommentController {
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
       const { content } = request.body;
 
@@ -247,6 +269,14 @@ export class LeadCommentController {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this comment',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem editar comentários de leads atribuídos a eles
+      if (!userIsOwner && existingComment.lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 
@@ -298,6 +328,8 @@ export class LeadCommentController {
       const userId = request.user!.id;
       // Obtém o owner_id efetivo para verificar acesso
       const effectiveOwnerId = await getEffectiveOwnerId(userId);
+      // Verifica se o usuário é owner ou membro do time
+      const userIsOwner = await isOwner(userId);
       const { id } = request.params;
 
       // Verificar se o comentário existe e pertence ao owner
@@ -324,6 +356,14 @@ export class LeadCommentController {
         return reply.status(403).send({
           success: false,
           error: 'Forbidden: You do not have access to this comment',
+        });
+      }
+
+      // REGRA DE NEGÓCIO: Membros do time só podem deletar comentários de leads atribuídos a eles
+      if (!userIsOwner && existingComment.lead.assigned_user_id !== userId) {
+        return reply.status(403).send({
+          success: false,
+          error: 'Forbidden: This lead is not assigned to you',
         });
       }
 

@@ -30,3 +30,27 @@ export async function getEffectiveOwnerId(userId: string): Promise<string> {
 export function getEffectiveOwnerIdFromUser(user: { id: string; owner_id: string | null }): string {
   return user.owner_id || user.id
 }
+
+/**
+ * Verifica se um usuário é owner (conta principal) ou membro do time.
+ *
+ * @returns true se o usuário é owner (owner_id === null), false se é membro do time (owner_id !== null)
+ */
+export async function isOwner(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, owner_id: true },
+  })
+
+  if (!user) {
+    throw new Error('Usuário não encontrado')
+  }
+
+  // DEBUG LOG
+  console.log('🔍 [isOwner] userId:', userId);
+  console.log('🔍 [isOwner] user.owner_id:', user.owner_id);
+  console.log('🔍 [isOwner] result (owner_id === null):', user.owner_id === null);
+
+  // Se owner_id é null, o usuário é owner
+  return user.owner_id === null
+}
